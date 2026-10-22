@@ -1,0 +1,6 @@
+# Fichiers propres à l'éditeur ou au système, à ne pas partager
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
