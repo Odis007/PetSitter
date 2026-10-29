@@ -1,3 +1,5 @@
+<?php require ROOT . '/app/views/layout/header.php'; ?>
+
 <h2>Espace administrateur</h2>
 
 <!-- Statistiques globales -->
@@ -7,7 +9,7 @@
     <span>garde(s) réalisée(s)</span>
   </div>
   <div class="stat">
-    <strong><?= afficherNote($moyenne) ?></strong>
+    <strong><?= e(Affichage::note($moyenne)) ?></strong>
     <span>note moyenne de la plateforme</span>
   </div>
   <div class="stat">
@@ -26,14 +28,15 @@
       <tr><th>Date</th><th>De</th><th>Pour</th><th>Note</th><th>Commentaire</th><th></th></tr>
       <?php foreach ($avis as $av): ?>
         <tr>
-          <td><?= dateFr($av->date) ?></td>
-          <td><?= htmlspecialchars($av->nom_auteur) ?></td>
-          <td><?= htmlspecialchars($av->nom_cible) ?></td>
+          <td><?= Affichage::date($av->date) ?></td>
+          <td><?= e($av->auteur) ?></td>
+          <td><?= e($av->cible) ?></td>
           <td><?= $av->note ?> / 5</td>
-          <td><?= htmlspecialchars($av->commentaire ?? '') ?></td>
+          <td><?= e($av->commentaire) ?></td>
           <td>
-            <form method="post" action="index.php?action=supprimerAvis">
-              <input type="hidden" name="id" value="<?= $av->id ?>">
+            <form method="post" action="index.php?action=supprimer_avis&id=<?= $av->id ?>"
+                  onsubmit="return confirm('Supprimer cet avis ?');">
+              <?= Securite::champ() ?>
               <button type="submit" class="petit danger">Supprimer</button>
             </form>
           </td>
@@ -50,15 +53,14 @@
     <tr><th>Nom</th><th>Email</th><th>Rôle</th><th></th></tr>
     <?php foreach ($utilisateurs as $u): ?>
       <tr>
+        <td><a href="index.php?action=profil&id=<?= $u->id ?>"><?= e($u->nom) ?></a></td>
+        <td><?= e($u->email) ?></td>
+        <td><?= e($u->role) ?></td>
         <td>
-          <a href="index.php?action=profil&id=<?= $u->id ?>"><?= htmlspecialchars($u->nom) ?></a>
-        </td>
-        <td><?= htmlspecialchars($u->email) ?></td>
-        <td><?= $u->role ?></td>
-        <td>
-          <?php if ($u->id !== $_SESSION['user_id']): ?>
-            <form method="post" action="index.php?action=supprimerUtilisateur">
-              <input type="hidden" name="id" value="<?= $u->id ?>">
+          <?php if ($u->id !== AuthController::utilisateurId()): ?>
+            <form method="post" action="index.php?action=supprimer_utilisateur&id=<?= $u->id ?>"
+                  onsubmit="return confirm('Supprimer ce compte et toutes ses données ?');">
+              <?= Securite::champ() ?>
               <button type="submit" class="petit danger">Supprimer</button>
             </form>
           <?php endif; ?>
@@ -67,3 +69,5 @@
     <?php endforeach; ?>
   </table>
 </div>
+
+<?php require ROOT . '/app/views/layout/footer.php'; ?>

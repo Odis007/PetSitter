@@ -1,55 +1,57 @@
 # PetSitter Local
 
 Application web de mise en relation entre propriétaires d'animaux et gardiens bénévoles.
-PHP 8 (POO), MySQL, architecture MVC.
+Projet BTS SIO SLAM : PHP 8 (POO), MySQL, architecture MVC.
 
 ## Installation
 
 1. Copier le dossier dans `C:\xampp\htdocs\`.
 2. Démarrer Apache et MySQL dans XAMPP.
-3. Importer `sql/petsitter.sql` dans phpMyAdmin (crée la base `petsitter` et le jeu de données).
+3. Importer `sql/petsitter.sql` dans phpMyAdmin (crée la base `petsitter` et le jeu d'essai).
 4. Ouvrir http://localhost/PetSitter-Local/public/
 
-Comptes de test (mot de passe : `motdepasse`) :
+Comptes de test (mot de passe : `password123`) :
 
-| Email | Rôle | Situation |
+| Email | Rôle | Situation dans le jeu d'essai |
 |---|---|---|
-| admin@petsitter.fr | admin | accès à l'espace admin |
-| alice@petsitter.fr | membre | propriétaire de 3 annonces (ouverte, pourvue, terminée) |
-| bruno@petsitter.fr | membre | gardien, peut encore noter Alice (annonce 4) |
-| chloe@petsitter.fr | membre | gardienne |
-| david@petsitter.fr | membre | propriétaire de 2 annonces |
+| admin@petsitter.test | admin | accès à l'espace admin |
+| alice@petsitter.test | user | propriétaire de Mochi (ouverte) et Rex (pourvue) |
+| bob@petsitter.test | user | a postulé à Mochi ; propriétaire des poissons et de Pixel |
+| chloe@petsitter.test | user | gardienne acceptée pour Rex ; propriétaire du hamster |
+
+`config/app.php` : `APP_ENV = 'dev'` affiche les erreurs, `'prod'` affiche un message générique.
 
 ## Architecture MVC
 
 ```
-public/index.php        Routeur unique : lit ?action=... et appelle le bon contrôleur
+public/index.php        Routeur unique : sécurité, session, autoload, e(), redirect(), match des actions
 public/css/style.css    Feuille de style
-config/database.php     Connexion PDO partagée (classe Database)
-app/models/             Modèles : requêtes SQL (Utilisateur, Annonce, Candidature, Avis)
-app/controllers/        Contrôleurs : logique et contrôle d'accès
-app/views/              Vues : affichage HTML uniquement
-app/helpers/            Fonctions communes (session, validation, affichage)
-sql/petsitter.sql       Création de la base + jeu de données
+config/app.php          Environnement (dev / prod)
+config/database.php     Connexion PDO unique (singleton Database::get())
+app/core/               Classes transverses : Securite (CSRF), Erreur (403/404/405), Affichage (mise en forme)
+app/models/             Modèles : SQL + règles métier (Utilisateur, Annonce, Candidature, Avis)
+app/controllers/        Contrôleurs : droits, validation, appel du modèle, choix de la vue
+app/views/              Vues : HTML uniquement, tout affichage passe par e()
+sql/petsitter.sql       Structure + jeu d'essai
 ```
 
-Parcours d'une requête : `index.php` → contrôleur → modèle (SQL) → contrôleur → vue (HTML).
+Trajet d'une requête : `index.php?action=detail&id=1` → `AnnonceController::detail()` →
+`Annonce::trouver(1)` (requête préparée, `hydrate()`) → vue `annonces/detail.php`.
 
 | Module | Contrôleur | Actions |
 |---|---|---|
-| Socle commun | `AuthController` | inscription, connexion, deconnexion |
-| A — Propriétaire | `AnnonceController` | accueil, creer, modifier, supprimer, mesAnnonces, candidatures, valider, terminer |
-| B — Gardien | `AnnonceController` / `CandidatureController` | liste, rechercher, fiche / postuler, retirer, mesCandidatures, profil |
-| C — Avis & Admin | `AvisController` | noter, admin, supprimerAvis, supprimerUtilisateur |
+| Socle | `AuthController` | connexion, inscription, deconnexion |
+| A — Annonces | `AnnonceController` | accueil, liste, detail, creer, modifier, supprimer, terminer, mes_annonces |
+| B — Candidatures | `CandidatureController` | postuler, retirer, mes_candidatures, recues, repondre |
+| C — Avis | `AvisController` | noter, profil |
+| Admin | `AdminController` | admin, supprimer_avis, supprimer_utilisateur |
 
 ## Schéma relationnel (MLD)
 
-- **utilisateurs** (<u>id</u>, nom, email, password, role)
-- **annonces** (<u>id</u>, titre, type_animal, ville, date_debut, date_fin, description, statut, #id_proprietaire)
-- **candidatures** (<u>id</u>, message, statut, date_candidature, #id_annonce, #id_gardien)
-  — unique (id_annonce, id_gardien)
-- **avis** (<u>id</u>, note, commentaire, date, #id_annonce, #id_auteur, #id_cible)
-  — unique (id_annonce, id_auteur)
+- **utilisateurs** (<u>id</u>, nom, email, mot_de_passe, role, created_at)
+- **annonces** (<u>id</u>, #id_proprietaire, titre, animal, description, ville, date_debut, date_fin, statut, created_at)
+- **candidatures** (<u>id</u>, #id_annonce, #id_gardien, message, statut, created_at) — UNIQUE (id_annonce, id_gardien)
+- **avis** (<u>id</u>, #id_annonce, #id_auteur, #id_cible, note, commentaire, date) — UNIQUE (id_annonce, id_auteur)
 
 ```mermaid
 erDiagram
@@ -65,102 +67,51 @@ erDiagram
 
 ```mermaid
 classDiagram
-  class Database {
-    -PDO instance$
-    +get() PDO$
-  }
-  class Utilisateur {
-    +int id
-    +string nom
-    +string email
-    +string password
-    +string role
-    +trouver(id)$
-    +trouverParEmail(email)$
-    +creer(nom, email, hash)$
-  }
-  class Annonce {
-    +int id
-    +string titre
-    +string type_animal
-    +string ville
-    +string date_debut
-    +string date_fin
-    +string description
-    +string statut
-    +int id_proprietaire
-    +toutesOuvertes()$
-    +rechercher(ville, typeAnimal)$
-    +creer(...)$
-    +cloturer(idCandidatureRetenue)
-    +terminer()
-    +terminerExpirees()$
-  }
-  class Candidature {
-    +int id
-    +string message
-    +string statut
-    +string date_candidature
-    +int id_annonce
-    +int id_gardien
-    +dejaCandidat(idAnnonce, idGardien)$
-    +creer(idAnnonce, idGardien, message)$
-  }
-  class Avis {
-    +int id
-    +int note
-    +string commentaire
-    +string date
-    +int id_annonce
-    +int id_auteur
-    +int id_cible
-    +creer(...)$
-    +noteMoyenne(idUtilisateur)$
-  }
-  Utilisateur "1" -- "*" Annonce : propriétaire
-  Utilisateur "1" -- "*" Candidature : gardien
+  class Database { -PDO instance$ ; +get() PDO$ }
+  class Utilisateur { +int id ; +string nom ; +string email ; +string mot_de_passe ; +string role ; +hydrate(row)$ ; +trouverParEmail(email)$ ; +creer(nom, email, mdp)$ ; +verifierMotDePasse(mdp) }
+  class Annonce { +ANIMAUX$ ; +int id ; +int id_proprietaire ; +string titre ; +string animal ; +string statut ; +rechercher(...)$ ; +creer(d, id)$ ; +modifier(id, d)$ ; +supprimer(id)$ ; +cloturer(idAnnonce, idCandidature)$ ; +terminer(id)$ ; +estProprietaire(id) ; +estModifiable() }
+  class Candidature { +int id ; +int id_annonce ; +int id_gardien ; +string message ; +string statut ; +existe(a, g)$ ; +parAnnonce(id)$ ; +parGardien(id)$ ; +changerStatut(id, s)$ ; +gardienAccepte(id)$ }
+  class Avis { +int id ; +int id_annonce ; +int id_auteur ; +int id_cible ; +int note ; +existe(a, u)$ ; +noteMoyenne(id)$ ; +cibleDe(annonce, id)$ }
+  Utilisateur "1" -- "*" Annonce
+  Utilisateur "1" -- "*" Candidature
   Annonce "1" -- "*" Candidature
   Annonce "1" -- "*" Avis
 ```
 
-## Cycle de vie d'une annonce
+## Cycle de vie d'une annonce (machine à états)
 
-```
-ouverte ──(le propriétaire valide un gardien)──► pourvue ──(date de fin passée, ou clôture manuelle)──► terminee
-```
+| Départ | Événement | Arrivée | Qui |
+|---|---|---|---|
+| ouverte | le propriétaire accepte une candidature | pourvue | propriétaire |
+| pourvue | le propriétaire marque la garde terminée (ou date de fin passée) | terminee | propriétaire / automatique |
+| ouverte | le propriétaire supprime l'annonce | (supprimée) | propriétaire |
+| pourvue / terminee | modifier, supprimer, postuler | interdit | personne |
 
-### Clôture : `Annonce::cloturer($idCandidatureRetenue)`
+**Clôture : `Annonce::cloturer($idAnnonce, $idCandidature)`** exécute trois `UPDATE` dans une
+**transaction** (tout ou rien) : la candidature choisie devient `acceptee`, les autres en attente `refusee`,
+l'annonce `pourvue`. En cas d'erreur, `rollBack()` annule tout.
 
-Quand le propriétaire choisit un gardien, trois requêtes sont exécutées dans une **transaction**
-(soit elles réussissent toutes, soit aucune n'est appliquée) :
-
-1. la candidature choisie passe à `acceptee` ;
-2. toutes les autres candidatures de l'annonce passent à `refusee` ;
-3. l'annonce passe à `pourvue`.
-
-Le contrôleur vérifie avant que l'utilisateur est bien le propriétaire et que l'annonce est encore `ouverte`,
-ce qui garantit un seul gardien par annonce.
-
-### Fin de garde
-
-- **Automatique** : à chaque chargement de page, `Annonce::terminerExpirees()` passe à `terminee`
-  toutes les annonces `pourvue` dont la `date_fin` est dépassée.
-- **Manuelle** : le propriétaire peut cliquer sur « Marquer la garde comme terminée ».
-
-Le statut `terminee` débloque la notation.
-
-### Notation et note moyenne : `Avis::noteMoyenne($idUtilisateur)`
-
-- Seuls le propriétaire et le gardien retenu peuvent noter, chacun notant l'autre (`id_cible`).
-- Un seul avis par personne et par garde : vérifié en PHP (`Avis::dejaNote`) et en base (clé unique).
-- La note moyenne est calculée par MySQL : `SELECT AVG(note) FROM avis WHERE id_cible = ?`.
-  Si l'utilisateur n'a reçu aucun avis, `AVG` renvoie `NULL` et le site affiche « Pas encore noté ».
+**Note moyenne : `Avis::noteMoyenne($id)`** = `SELECT AVG(note) FROM avis WHERE id_cible = :id`,
+arrondie à une décimale ; `null` (« Pas encore d'avis ») si l'utilisateur n'a reçu aucun avis.
+`Avis::cibleDe()` décide qui note qui : le propriétaire note le gardien accepté et inversement.
 
 ## Sécurité
 
-- Mots de passe hachés avec `password_hash()` et vérifiés avec `password_verify()`.
-- Toutes les requêtes avec des données utilisateur sont des requêtes préparées PDO (`?`).
-- Tout affichage passe par `htmlspecialchars()` (protection XSS).
-- Contrôle d'accès : `requireLogin()`, `requireAdmin()`, et vérification du propriétaire avant
-  de voir les candidatures, valider un gardien ou clôturer une garde.
-- Vérification des formulaires côté serveur (`app/helpers/validation.php`).
+- Requêtes préparées PDO partout (paramètres nommés `:id`).
+- `e()` sur tout affichage (XSS) ; `nl2br(e(...))` pour les textes longs.
+- `password_hash()` / `password_verify()`, `rehasherSiNecessaire()`.
+- Jeton **CSRF** dans chaque formulaire POST (`Securite::champ()` / `verifier()` / `exigerPost()`).
+- Actions d'écriture en POST uniquement (405), déconnexion comprise.
+- Codes **403** (pas le droit), **404** (introuvable), **405** (mauvaise méthode), **400** (valeur falsifiée).
+- Liste blanche des champs (`lireFormulaire()`), des animaux (`Annonce::ANIMAUX`), des décisions, du tri.
+- Session durcie (`use_strict_mode`, `httponly`, `samesite=Lax`), `session_regenerate_id()` à la connexion.
+- Blocage 60 s après 5 mots de passe erronés ; message identique pour email inconnu et mauvais mot de passe.
+- En-têtes `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` ; gestionnaire d'exceptions dev / prod.
+
+Limites connues : pas de HTTPS en local, compteur de tentatives stocké en session,
+pas de Content-Security-Policy (JavaScript inline `onsubmit`), pas de journal d'audit.
+
+## Écart avec le support de cours
+
+Le support utilise le type de retour `never` (PHP 8.1) pour `redirect()`. XAMPP fournit PHP 8.0 :
+on écrit `void`, le comportement est identique puisque la fonction se termine par `exit`.

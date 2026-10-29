@@ -1,46 +1,85 @@
 <?php
+// app/models/Utilisateur.php
 
-class Utilisateur {
-  // Une propriété par colonne de la table utilisateurs
-  public int $id;
-  public string $nom;
-  public string $email;
-  public string $password;
-  public string $role;
+class Utilisateur
+{
+    public function __construct(
+        public int $id = 0,
+        public string $nom = '',
+        public string $email = '',
+        public string $mot_de_passe = '',
+        public string $role = 'user'
+    ) {}
 
-  // Trouver un utilisateur par son id (null s'il n'existe pas)
-  public static function trouver(int $id): ?Utilisateur {
-    $stmt = Database::get()->prepare("SELECT * FROM utilisateurs WHERE id = ?");
-    $stmt->execute([$id]);
-    // fetchObject crée un objet Utilisateur rempli avec la ligne trouvée
-    return $stmt->fetchObject(self::class) ?: null;
-  }
+    public static function hydrate(array $row): self
+    {
+        return new self(
+            (int) $row['id'],
+            $row['nom'],
+            $row['email'],
+            $row['mot_de_passe'],
+            $row['role']
+        );
+    }
 
-  // Trouver un utilisateur par son email (pour la connexion)
-  public static function trouverParEmail(string $email): ?Utilisateur {
-    $stmt = Database::get()->prepare("SELECT * FROM utilisateurs WHERE email = ?");
-    $stmt->execute([$email]);
-    return $stmt->fetchObject(self::class) ?: null;
-  }
+    public static function trouver(int $id): ?self
+    {
+        $stmt = Database::get()->prepare("SELECT * FROM utilisateurs WHERE id = :id");
+        $stmt->execute(['id' => $id]);
+        $row = $stmt->fetch();
+        return $row ? self::hydrate($row) : null;
+    }
 
-  // Créer un compte, renvoie son id.
-  // $hash est le mot de passe DÉJÀ passé dans password_hash()
-  public static function creer(string $nom, string $email, string $hash): int {
-    $pdo = Database::get();
-    $pdo->prepare(
-      "INSERT INTO utilisateurs (nom, email, password) VALUES (?, ?, ?)"
-    )->execute([$nom, $email, $hash]);
-    return (int) $pdo->lastInsertId();
-  }
+    public static function trouverParEmail(string $email): ?self
+    {
+        $stmt = Database::get()->prepare("SELECT * FROM utilisateurs WHERE email = :email");
+        $stmt->execute(['email' => $email]);
+        $row = $stmt->fetch();
+        return $row ? self::hydrate($row) : null;
+    }
 
-  // Tous les comptes (pour l'admin)
-  public static function tous(): array {
-    $stmt = Database::get()->query("SELECT * FROM utilisateurs ORDER BY nom");
-    return $stmt->fetchAll(PDO::FETCH_CLASS, self::class);
-  }
+    // Crée le compte et retourne son id (le mot de passe est HACHÉ ici)
+    public static function creer(string $nom, string $email, string $motDePasse): int
+    {
+        $stmt = Database::get()->prepare(
+            "INSERT INTO utilisateurs (nom, email, mot_de_passe)
+             VALUES (:nom, :email, :mdp)"
+        );
+        $stmt->execute([
+            'nom'   => $nom,
+            'email' => $email,
+            'mdp'   => password_hash($motDePasse, PASSWORD_DEFAULT),
+        ]);
+        return (int) Database::get()->lastInsertId();
+    }
 
-  // Supprimer un compte (ses annonces, candidatures et avis partent avec : ON DELETE CASCADE)
-  public static function supprimer(int $id): void {
-    Database::get()->prepare("DELETE FROM utilisateurs WHERE id = ?")->execute([$id]);
-  }
+    public function verifierMotDePasse(string $motDePasse): bool
+    {
+        return password_verify($motDePasse, $this->mot_de_passe);
+    }
+
+    // Si PHP change son algorithme de hachage, on re-hache à la connexion suivante
+    public function rehasherSiNecessaire(string $motDePasse): void
+    {
+        if (password_needs_rehash($this->mot_de_passe, PASSWORD_DEFAULT)) {
+            $stmt = Database::get()->prepare("UPDATE utilisateurs SET mot_de_passe = :mdp WHERE id = :id");
+            $stmt->execute(['mdp' => password_hash($motDePasse, PASSWORD_DEFAULT), 'id' => $this->id]);
+        }
+    }
+
+    // ---------- Espace administrateur ----------
+
+    /** @return Utilisateur[] */
+    public static function tous(): array
+    {
+        $rows = Database::get()->query("SELECT * FROM utilisateurs ORDER BY nom")->fetchAll();
+        return array_map([self::class, 'hydrate'], $rows);
+    }
+
+    // Ses annonces, candidatures et avis partent avec (ON DELETE CASCADE)
+    public static function supprimer(int $id): void
+    {
+        $stmt = Database::get()->prepare("DELETE FROM utilisateurs WHERE id = :id");
+        $stmt->execute(['id' => $id]);
+    }
 }

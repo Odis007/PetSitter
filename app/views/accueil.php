@@ -1,3 +1,5 @@
+<?php require ROOT . '/app/views/layout/header.php'; ?>
+
 <!-- ========== 1. Grand bandeau ========== -->
 <section class="hero">
   <div class="conteneur hero-grille">
@@ -21,7 +23,7 @@
         <div class="preuve">
           <div class="avatars">
             <?php foreach ($derniersAvis as $av): ?>
-              <span class="avatar"><?= initiale($av->nom_auteur) ?></span>
+              <span class="avatar"><?= Affichage::initiale($av->auteur) ?></span>
             <?php endforeach; ?>
           </div>
           <div>
@@ -37,11 +39,11 @@
       <span class="hero-badge">✓ Profil vérifié</span>
 
       <?php if ($meilleurMembre): ?>
-        <a href="index.php?action=profil&id=<?= $meilleurMembre->id ?>" class="hero-note">
-          <span class="avatar"><?= initiale($meilleurMembre->nom) ?></span>
+        <a href="index.php?action=profil&id=<?= (int) $meilleurMembre['id'] ?>" class="hero-note">
+          <span class="avatar"><?= Affichage::initiale($meilleurMembre['nom']) ?></span>
           <span>
-            <small>Membre le mieux noté (<?= htmlspecialchars($meilleurMembre->nom) ?>)</small>
-            <strong>Note : <?= number_format($meilleurMembre->moyenne, 1, ',', '') ?> <span class="etoiles-or">★</span></strong>
+            <small>Membre le mieux noté (<?= e($meilleurMembre['nom']) ?>)</small>
+            <strong>Note : <?= number_format((float) $meilleurMembre['moyenne'], 1, ',', '') ?> <span class="etoiles-or">★</span></strong>
           </span>
         </a>
       <?php endif; ?>
@@ -93,38 +95,38 @@
     <div class="cartes-grille cartes-grille--3">
       <?php foreach ($annonces as $a): ?>
         <article class="carte">
-          <div class="carte-visuel visuel--<?= strtolower($a->type_animal) ?>">
-            <span class="carte-emoji"><?= emojiAnimal($a->type_animal) ?></span>
-            <span class="carte-statut"><?= badgeStatut($a->statut) ?></span>
+          <div class="carte-visuel <?= Affichage::classeVisuel($a->animal) ?>">
+            <span class="carte-emoji"><?= Affichage::emoji($a->animal) ?></span>
+            <span class="carte-statut"><?= Affichage::badge($a->statut) ?></span>
           </div>
 
           <div class="carte-corps">
-            <h3><?= htmlspecialchars($a->titre) ?></h3>
+            <h3><?= e($a->titre) ?></h3>
 
             <div class="detail">
               <span class="detail-icone">📍</span>
-              <div><small>Lieu</small><?= htmlspecialchars($a->ville) ?></div>
+              <div><small>Lieu</small><?= e($a->ville) ?></div>
             </div>
             <div class="detail">
               <span class="detail-icone">📅</span>
-              <div><small>Dates</small><?= periode($a->date_debut, $a->date_fin) ?></div>
+              <div><small>Dates</small><?= e(Affichage::periode($a->date_debut, $a->date_fin)) ?></div>
             </div>
             <div class="detail">
-              <span class="detail-icone"><?= emojiAnimal($a->type_animal) ?></span>
-              <div><small>Animal</small><?= htmlspecialchars($a->type_animal) ?></div>
+              <span class="detail-icone"><?= Affichage::emoji($a->animal) ?></span>
+              <div><small>Animal</small><?= e($a->animal) ?></div>
             </div>
 
             <div class="carte-pied">
-              <?php if ($a->statut === 'ouverte'): ?>
+              <?php if ($a->estOuverte()): ?>
                 <span class="discret">
                   <?= $a->nb_candidatures > 0
                     ? $a->nb_candidatures . ' candidature(s)'
                     : 'Soyez le premier !' ?>
                 </span>
-                <a href="index.php?action=fiche&id=<?= $a->id ?>" class="btn btn--sombre btn--petit">Voir l'annonce</a>
+                <a href="index.php?action=detail&id=<?= $a->id ?>" class="btn btn--sombre btn--petit">Voir l'annonce</a>
               <?php else: ?>
                 <span class="texte-vert">✓ Gardien trouvé !</span>
-                <a href="index.php?action=fiche&id=<?= $a->id ?>" class="btn btn--gris btn--petit">Voir l'annonce</a>
+                <a href="index.php?action=detail&id=<?= $a->id ?>" class="btn btn--gris btn--petit">Voir l'annonce</a>
               <?php endif; ?>
             </div>
           </div>
@@ -133,3 +135,5 @@
     </div>
   </div>
 </section>
+
+<?php require ROOT . '/app/views/layout/footer.php'; ?>

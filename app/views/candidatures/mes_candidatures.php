@@ -1,3 +1,5 @@
+<?php require ROOT . '/app/views/layout/header.php'; ?>
+
 <h2>Mes candidatures</h2>
 
 <?php if (empty($candidatures)): ?>
@@ -18,25 +20,21 @@
       <?php foreach ($candidatures as $c): ?>
         <tr>
           <td>
-            <a href="index.php?action=fiche&id=<?= $c->id_annonce ?>">
-              <?= htmlspecialchars($c->titre_annonce) ?>
-            </a>
+            <a href="index.php?action=detail&id=<?= $c->id_annonce ?>"><?= e($c->annonce_titre) ?></a>
           </td>
-          <td><?= dateFr($c->date_candidature) ?></td>
-          <td><?= badgeStatut($c->statut) ?></td>
-          <td><?= badgeStatut($c->statut_annonce) ?></td>
+          <td><?= Affichage::date($c->created_at) ?></td>
+          <td><?= Affichage::badge($c->statut) ?></td>
+          <td><?= Affichage::badge($c->annonce_statut ?? '') ?></td>
           <td>
             <?php if ($c->statut === 'en_attente'): ?>
-              <form method="post" action="index.php?action=retirer"
-                    onsubmit="return confirm('Retirer cette candidature ?')">
-                <input type="hidden" name="id_candidature" value="<?= $c->id ?>">
+              <form method="post" action="index.php?action=retirer&id=<?= $c->id ?>"
+                    onsubmit="return confirm('Retirer cette candidature ?');">
+                <?= Securite::champ() ?>
                 <button type="submit" class="petit danger">Retirer</button>
               </form>
             <?php endif; ?>
             <?php if ($peutNoter[$c->id]): ?>
-              <a class="bouton" href="index.php?action=noter&id_annonce=<?= $c->id_annonce ?>">
-                Noter le propriétaire
-              </a>
+              <a class="bouton" href="index.php?action=noter&id=<?= $c->id_annonce ?>">Laisser un avis</a>
             <?php endif; ?>
           </td>
         </tr>
@@ -44,3 +42,5 @@
     </table>
   </div>
 <?php endif; ?>
+
+<?php require ROOT . '/app/views/layout/footer.php'; ?>

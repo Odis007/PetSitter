@@ -1,22 +1,27 @@
-<h2>Noter <?= htmlspecialchars($cible->nom) ?></h2>
-<p>Pour la garde « <?= htmlspecialchars($annonce->titre) ?> »</p>
+<?php require ROOT . '/app/views/layout/header.php'; ?>
 
-<?php require __DIR__ . '/../layout/erreurs.php'; ?>
+<h2>Noter <?= e($cible->nom) ?></h2>
+<p>Pour la garde « <?= e($annonce->titre) ?> »</p>
 
-<form method="post" action="index.php?action=noter&id_annonce=<?= $annonce->id ?>" class="formulaire">
+<?php require ROOT . '/app/views/layout/erreurs.php'; ?>
+
+<form method="post" action="index.php?action=noter&id=<?= $annonce->id ?>" class="formulaire">
+  <?= Securite::champ() ?>
+
   <label>Note</label>
-  <div class="etoiles">
-    <?php for ($i = 1; $i <= 5; $i++): ?>
-      <label>
-        <input type="radio" name="note" value="<?= $i ?>"
-          <?= (int) ($_POST['note'] ?? 0) === $i ? 'checked' : '' ?>>
-        <?= $i ?> ★
-      </label>
+  <select name="note" required>
+    <option value="">-- Choisir --</option>
+    <?php for ($i = 5; $i >= 1; $i--): ?>
+      <option value="<?= $i ?>" <?= $note === (string) $i ? 'selected' : '' ?>>
+        <?= str_repeat('★', $i) . str_repeat('☆', 5 - $i) ?> (<?= $i ?>/5)
+      </option>
     <?php endfor; ?>
-  </div>
+  </select>
 
-  <label>Commentaire (facultatif)</label>
-  <textarea name="commentaire" rows="4" maxlength="500"><?= htmlspecialchars($_POST['commentaire'] ?? '') ?></textarea>
+  <label>Commentaire (facultatif, 500 caractères maximum)</label>
+  <textarea name="commentaire" rows="4" maxlength="500"><?= e($commentaire) ?></textarea>
 
   <button type="submit">Envoyer mon avis</button>
 </form>
+
+<?php require ROOT . '/app/views/layout/footer.php'; ?>

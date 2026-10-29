@@ -1,90 +1,85 @@
 <?php
+// app/controllers/AvisController.php
 
-class AvisController {
+class AvisController
+{
+    // GET : formulaire / POST : enregistrement (?action=noter&id=<id annonce>)
+    public function noter(): void
+    {
+        AuthController::exigerConnexion();
+        $idAuteur = AuthController::utilisateurId();
 
-  // Laisser un avis sur une garde terminée
-  public function noter(): void {
-    $idAuteur = requireLogin();
-    $annonce = Annonce::trouver((int) ($_GET['id_annonce'] ?? 0));
+        // 1. L'annonce existe
+        $annonce = Annonce::trouver((int) ($_GET['id'] ?? 0));
+        if ($annonce === null) {
+            Erreur::afficher(404, 'Annonce introuvable.');
+        }
 
-    // Règle métier : on ne note qu'une garde terminée
-    if ($annonce === null || $annonce->statut !== 'terminee') {
-      flash("On ne peut noter qu'une garde terminée.", 'erreur');
-      rediriger('index.php');
+        // 2. Propriétaire ou gardien accepté : sinon 403
+        $idCible = Avis::cibleDe($annonce, $idAuteur);
+        if ($idCible === null) {
+            Erreur::afficher(403, 'Accès interdit : vous n\'avez pas participé à cette garde.');
+        }
+
+        // 3. La garde doit être terminée
+        if ($annonce->statut !== 'terminee') {
+            $_SESSION['flash_erreur'] = 'Vous pourrez noter une fois la garde terminée.';
+            redirect('detail', ['id' => $annonce->id]);
+        }
+
+        // 4. Un seul avis par auteur et par annonce
+        if (Avis::existe($annonce->id, $idAuteur)) {
+            $_SESSION['flash_erreur'] = 'Vous avez déjà noté cette garde.';
+            redirect('detail', ['id' => $annonce->id]);
+        }
+
+        $cible = Utilisateur::trouver($idCible);
+        $erreurs = [];
+        $note = '';
+        $commentaire = '';
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            Securite::verifier();
+
+            $note = trim($_POST['note'] ?? '');
+            $commentaire = trim($_POST['commentaire'] ?? '');
+
+            // filter_var refuse "abc", "4.5", 0 et 6
+            $noteValide = filter_var($note, FILTER_VALIDATE_INT, [
+                'options' => ['min_range' => 1, 'max_range' => 5],
+            ]);
+            if ($noteValide === false) {
+                $erreurs[] = 'La note doit être un nombre entier de 1 à 5.';
+            }
+            if (mb_strlen($commentaire) > 500) {
+                $erreurs[] = 'Le commentaire ne doit pas dépasser 500 caractères.';
+            }
+
+            if (!$erreurs) {
+                Avis::creer($annonce->id, $idAuteur, $idCible, $noteValide,
+                    $commentaire === '' ? null : $commentaire);
+                $_SESSION['flash'] = 'Merci pour votre avis !';
+                redirect('profil', ['id' => $idCible]);
+            }
+        }
+
+        $titre = 'Laisser un avis';
+        require ROOT . '/app/views/avis/formulaire.php';
     }
 
-    // Qui note qui ? Le propriétaire note le gardien, et inversement.
-    $idGardien = $annonce->idGardienRetenu();
-    if ($idAuteur === $annonce->id_proprietaire) {
-      $idCible = $idGardien;
-    } elseif ($idAuteur === $idGardien) {
-      $idCible = $annonce->id_proprietaire;
-    } else {
-      flash("Vous n'avez pas participé à cette garde.", 'erreur');
-      rediriger('index.php');
+    // GET : profil public d'un utilisateur : note moyenne + avis reçus
+    public function profil(): void
+    {
+        $utilisateur = Utilisateur::trouver((int) ($_GET['id'] ?? 0));
+        if ($utilisateur === null) {
+            Erreur::afficher(404, 'Utilisateur introuvable.');
+        }
+
+        $moyenne  = Avis::noteMoyenne($utilisateur->id);
+        $avis     = Avis::parCible($utilisateur->id);
+        $nbGardes = Candidature::nombreGardesRealisees($utilisateur->id);
+
+        $titre = 'Profil de ' . $utilisateur->nom;
+        require ROOT . '/app/views/avis/profil.php';
     }
-
-    // Règle métier : une seule note par personne et par garde
-    if (Avis::dejaNote($annonce->id, $idAuteur)) {
-      flash('Vous avez déjà noté cette garde.', 'erreur');
-      rediriger('index.php');
-    }
-
-    $cible = Utilisateur::trouver($idCible);
-
-    if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-      vue('avis/formulaire', ['annonce' => $annonce, 'cible' => $cible, 'erreurs' => []]);
-      return;
-    }
-
-    $erreurs = validerAvis($_POST);
-    if (!empty($erreurs)) {
-      vue('avis/formulaire', ['annonce' => $annonce, 'cible' => $cible, 'erreurs' => $erreurs]);
-      return;
-    }
-
-    Avis::creer(
-      $annonce->id, $idAuteur, $idCible,
-      (int) $_POST['note'], trim($_POST['commentaire'] ?? '')
-    );
-    flash('Merci pour votre avis !');
-    rediriger("index.php?action=profil&id=$idCible");
-  }
-
-  // Espace admin : statistiques, modération des avis, gestion des comptes
-  public function admin(): void {
-    requireAdmin();
-    $utilisateurs = Utilisateur::tous();
-
-    vue('admin/dashboard', [
-      'nbGardes'       => Annonce::nombreTerminees(),
-      'moyenne'        => Avis::moyenneGlobale(),
-      'nbUtilisateurs' => count($utilisateurs),
-      'avis'           => Avis::tous(),
-      'utilisateurs'   => $utilisateurs,
-    ]);
-  }
-
-  // Admin : supprimer un avis abusif
-  public function supprimerAvis(): void {
-    requireAdmin();
-    Avis::supprimer((int) ($_POST['id'] ?? 0));
-    flash('Avis supprimé.');
-    rediriger('index.php?action=admin');
-  }
-
-  // Admin : supprimer un compte
-  public function supprimerUtilisateur(): void {
-    $idAdmin = requireAdmin();
-    $id = (int) ($_POST['id'] ?? 0);
-
-    if ($id === $idAdmin) {
-      flash('Vous ne pouvez pas supprimer votre propre compte.', 'erreur');
-      rediriger('index.php?action=admin');
-    }
-
-    Utilisateur::supprimer($id);
-    flash('Compte supprimé.');
-    rediriger('index.php?action=admin');
-  }
 }

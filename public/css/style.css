@@ -688,3 +688,33 @@ tr:last-child td { border-bottom: none; }
   .barre-recherche .btn { width: 100%; }
   .menu { order: 3; width: 100%; gap: 18px; }
 }
+
+/* ---------- 17. Ajouts : alignement sur le cours ---------- */
+
+/* Fonds des cartes pour chaque animal de Annonce::ANIMAUX */
+.visuel--lapin   { background: linear-gradient(140deg, #f6d9e4, #e7a9c0); }
+.visuel--rongeur { background: linear-gradient(140deg, #f3e3c3, #ddb978); }
+.visuel--oiseau  { background: linear-gradient(140deg, #fbe9a7, #f0c75a); }
+.visuel--poisson { background: linear-gradient(140deg, #bfe4ee, #6fb9d0); }
+
+/* Déconnexion : un formulaire POST qui ressemble à un lien */
+form.inline { display: inline; margin: 0; }
+button.lien-discret {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--gris);
+  font: 500 0.9rem var(--police-texte);
+  cursor: pointer;
+}
+button.lien-discret:hover { color: var(--corail); }
+
+/* Page d'erreur 400 / 403 / 404 / 405 */
+.page-erreur { text-align: center; padding: 40px 0; }
+.page-erreur-code {
+  font: 800 5rem var(--police-titre);
+  color: var(--corail);
+  margin: 0;
+  line-height: 1;
+}
+.page-erreur h2 { font-size: 1.4rem; margin: 16px 0 24px; }

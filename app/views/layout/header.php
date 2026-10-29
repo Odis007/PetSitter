@@ -8,7 +8,7 @@ $connecte = isset($_SESSION['user_id']);
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>PetSitter Local</title>
+  <title><?= e($titre ?? 'PetSitter') ?> - PetSitter</title>
   <!-- Polices Google : Outfit pour les titres, Inter pour le texte -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,14 +26,14 @@ $connecte = isset($_SESSION['user_id']);
     <nav class="menu">
       <a href="index.php" class="<?= $page === 'accueil' ? 'actif' : '' ?>">Accueil</a>
       <a href="index.php?action=liste"
-         class="<?= in_array($page, ['liste', 'rechercher', 'fiche']) ? 'actif' : '' ?>">Les annonces</a>
+         class="<?= in_array($page, ['liste', 'detail'], true) ? 'actif' : '' ?>">Les annonces</a>
 
       <?php if ($connecte): ?>
-        <a href="index.php?action=mesAnnonces"
-           class="<?= in_array($page, ['mesAnnonces', 'candidatures']) ? 'actif' : '' ?>">Mes annonces</a>
-        <a href="index.php?action=mesCandidatures"
-           class="<?= $page === 'mesCandidatures' ? 'actif' : '' ?>">Mes candidatures</a>
-        <?php if ($_SESSION['role'] === 'admin'): ?>
+        <a href="index.php?action=mes_annonces"
+           class="<?= in_array($page, ['mes_annonces', 'recues'], true) ? 'actif' : '' ?>">Mes annonces</a>
+        <a href="index.php?action=mes_candidatures"
+           class="<?= $page === 'mes_candidatures' ? 'actif' : '' ?>">Mes candidatures</a>
+        <?php if (($_SESSION['role'] ?? '') === 'admin'): ?>
           <a href="index.php?action=admin" class="<?= $page === 'admin' ? 'actif' : '' ?>">Admin</a>
         <?php endif; ?>
       <?php else: ?>
@@ -43,11 +43,15 @@ $connecte = isset($_SESSION['user_id']);
 
     <div class="compte">
       <?php if ($connecte): ?>
-        <a href="index.php?action=profil&id=<?= $_SESSION['user_id'] ?>" class="compte-nom">
-          <span class="avatar"><?= initiale($_SESSION['nom']) ?></span>
-          <?= htmlspecialchars($_SESSION['nom']) ?>
+        <a href="index.php?action=profil&id=<?= (int) $_SESSION['user_id'] ?>" class="compte-nom">
+          <span class="avatar"><?= Affichage::initiale($_SESSION['user_nom']) ?></span>
+          <?= e($_SESSION['user_nom']) ?>
         </a>
-        <a href="index.php?action=deconnexion" class="lien-discret">Déconnexion</a>
+        <!-- Déconnexion en POST avec jeton : un simple lien serait attaquable (CSRF) -->
+        <form method="post" action="index.php?action=deconnexion" class="inline">
+          <?= Securite::champ() ?>
+          <button type="submit" class="lien-discret">Déconnexion</button>
+        </form>
         <a href="index.php?action=creer" class="btn btn--corail">Publier une annonce</a>
       <?php else: ?>
         <a href="index.php?action=connexion">Connexion</a>
@@ -59,4 +63,13 @@ $connecte = isset($_SESSION['user_id']);
 
 <!-- Les pages "pleine largeur" (accueil, annonces) gèrent elles-mêmes leurs marges -->
 <main class="<?= empty($pleineLargeur) ? 'contenu' : '' ?>">
-  <div class="conteneur"><?php afficherFlash(); ?></div>
+  <div class="conteneur">
+    <?php if (!empty($_SESSION['flash_erreur'])): ?>
+      <p class="flash flash--erreur"><?= e($_SESSION['flash_erreur']) ?></p>
+      <?php unset($_SESSION['flash_erreur']); ?>
+    <?php endif; ?>
+    <?php if (!empty($_SESSION['flash'])): ?>
+      <p class="flash flash--succes"><?= e($_SESSION['flash']) ?></p>
+      <?php unset($_SESSION['flash']); ?>
+    <?php endif; ?>
+  </div>

@@ -29,7 +29,7 @@
     </div>
 
     <div class="pied-bas">
-      <span>© <?= date('Y') ?> PetSitter Local. Projet étudiant.</span>
+      <span>© <?= date('Y') ?> PetSitter Local. Projet étudiant BTS SIO SLAM.</span>
       <span>Fait avec ♥ pour nos compagnons</span>
     </div>
   </div>

@@ -1,50 +1,42 @@
-<?php
-// Le même formulaire sert à CRÉER et à MODIFIER une annonce.
-// $annonce vaut null pour une création, et contient l'annonce pour une modification.
-// $valeurs contient les valeurs à afficher dans les champs.
-$modification = $annonce !== null;
-$url = $modification
-  ? "index.php?action=modifier&id=$annonce->id"
-  : 'index.php?action=creer';
-?>
+<?php require ROOT . '/app/views/layout/header.php'; ?>
 
-<h2><?= $modification ? 'Modifier mon annonce' : 'Publier une annonce' ?></h2>
+<!-- Une seule vue pour CRÉER et MODIFIER : le contrôleur fournit
+     $data (valeurs des champs), $erreurs, $actionUrl et $bouton -->
+<h2><?= e($titre) ?></h2>
 
-<?php require __DIR__ . '/../layout/erreurs.php'; ?>
+<?php require ROOT . '/app/views/layout/erreurs.php'; ?>
 
-<form method="post" action="<?= $url ?>" class="formulaire">
+<form method="post" action="<?= e($actionUrl) ?>" class="formulaire">
+  <?= Securite::champ() ?>
+
   <label>Titre</label>
-  <input type="text" name="titre" required
-         value="<?= htmlspecialchars($valeurs['titre'] ?? '') ?>">
+  <input type="text" name="titre" value="<?= e($data['titre']) ?>" maxlength="120" required>
 
-  <label>Type d'animal</label>
-  <select name="type_animal">
-    <?php foreach (['Chat', 'Chien', 'Autre'] as $t): ?>
-      <option value="<?= $t ?>"
-        <?= ($valeurs['type_animal'] ?? '') === $t ? 'selected' : '' ?>>
-        <?= $t ?>
+  <label>Animal</label>
+  <select name="animal" required>
+    <option value="">-- Choisir --</option>
+    <?php foreach (Annonce::ANIMAUX as $type): ?>
+      <option value="<?= e($type) ?>" <?= $data['animal'] === $type ? 'selected' : '' ?>>
+        <?= e($type) ?>
       </option>
     <?php endforeach; ?>
   </select>
 
   <label>Ville</label>
-  <input type="text" name="ville" required
-         value="<?= htmlspecialchars($valeurs['ville'] ?? '') ?>">
+  <input type="text" name="ville" value="<?= e($data['ville']) ?>" required>
 
-  <label>Du</label>
-  <input type="date" name="date_debut" required
-         value="<?= htmlspecialchars($valeurs['date_debut'] ?? '') ?>">
-  <label>Au</label>
-  <input type="date" name="date_fin" required
-         value="<?= htmlspecialchars($valeurs['date_fin'] ?? '') ?>">
+  <label>Date de début</label>
+  <input type="date" name="date_debut" value="<?= e($data['date_debut']) ?>" required>
+  <label>Date de fin</label>
+  <input type="date" name="date_fin" value="<?= e($data['date_fin']) ?>" required>
 
-  <label>Description des besoins</label>
-  <textarea name="description" rows="5" required><?= htmlspecialchars($valeurs['description'] ?? '') ?></textarea>
+  <label>Description des besoins (10 caractères minimum)</label>
+  <textarea name="description" rows="5" required><?= e($data['description']) ?></textarea>
 
   <div class="actions">
-    <button type="submit"><?= $modification ? 'Enregistrer' : 'Publier' ?></button>
-    <?php if ($modification): ?>
-      <a href="index.php?action=fiche&id=<?= $annonce->id ?>">Annuler</a>
-    <?php endif; ?>
+    <button type="submit"><?= e($bouton) ?></button>
+    <a href="index.php?action=mes_annonces">Annuler</a>
   </div>
 </form>
+
+<?php require ROOT . '/app/views/layout/footer.php'; ?>

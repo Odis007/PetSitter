@@ -1,14 +1,9 @@
-<?php
-// Filtres actuellement choisis (pour cocher les bonnes cases)
-$urgent = !empty($_GET['urgent']);
-$tri = $_GET['tri'] ?? 'proches';
-$typeChoisi = $_GET['type_animal'] ?? '';
-$ville = trim($_GET['ville'] ?? '');
-?>
+<?php require ROOT . '/app/views/layout/header.php'; ?>
 
-<!-- Un seul formulaire pour la barre de recherche ET les filtres de gauche -->
+<!-- Un seul formulaire GET pour la barre de recherche ET les filtres de gauche -->
 <form method="get" action="index.php">
-  <input type="hidden" name="action" value="rechercher">
+  <!-- Indispensable : sans lui, le formulaire GET perd l'action et le routeur retombe sur default -->
+  <input type="hidden" name="action" value="liste">
 
   <!-- ========== Bandeau + recherche ========== -->
   <section class="hero-annonces">
@@ -19,16 +14,16 @@ $ville = trim($_GET['ville'] ?? '');
         une garde qui correspond à vos disponibilités.
       </p>
 
-      <?php require __DIR__ . '/recherche.php'; ?>
+      <?php require ROOT . '/app/views/annonces/recherche.php'; ?>
 
       <!-- Raccourcis -->
       <div class="puces">
-        <a href="index.php?action=rechercher&urgent=1"
-           class="puce <?= $urgent ? 'puce--active' : '' ?>">Urgences (-48h)</a>
-        <a href="index.php?action=rechercher&type_animal=Chien"
-           class="puce <?= $typeChoisi === 'Chien' ? 'puce--active' : '' ?>">🐶 Chiens</a>
-        <a href="index.php?action=rechercher&type_animal=Chat"
-           class="puce <?= $typeChoisi === 'Chat' ? 'puce--active' : '' ?>">🐱 Chats</a>
+        <a href="index.php?action=liste&urgent=1"
+           class="puce <?= $filtreUrgent ? 'puce--active' : '' ?>">Urgences (-48h)</a>
+        <a href="index.php?action=liste&animal=Chien"
+           class="puce <?= $filtreAnimal === 'Chien' ? 'puce--active' : '' ?>">🐶 Chiens</a>
+        <a href="index.php?action=liste&animal=Chat"
+           class="puce <?= $filtreAnimal === 'Chat' ? 'puce--active' : '' ?>">🐱 Chats</a>
       </div>
     </div>
   </section>
@@ -45,17 +40,17 @@ $ville = trim($_GET['ville'] ?? '');
 
         <h4>Urgence</h4>
         <label class="case">
-          <input type="checkbox" name="urgent" value="1" <?= $urgent ? 'checked' : '' ?>>
+          <input type="checkbox" name="urgent" value="1" <?= $filtreUrgent ? 'checked' : '' ?>>
           Commence dans moins de 48h
         </label>
 
         <h4>Trier par</h4>
         <label class="case">
-          <input type="radio" name="tri" value="proches" <?= $tri !== 'recentes' ? 'checked' : '' ?>>
+          <input type="radio" name="tri" value="proches" <?= $filtreTri === 'proches' ? 'checked' : '' ?>>
           Date de garde la plus proche
         </label>
         <label class="case">
-          <input type="radio" name="tri" value="recentes" <?= $tri === 'recentes' ? 'checked' : '' ?>>
+          <input type="radio" name="tri" value="recentes" <?= $filtreTri === 'recentes' ? 'checked' : '' ?>>
           Annonces les plus récentes
         </label>
 
@@ -65,7 +60,7 @@ $ville = trim($_GET['ville'] ?? '');
       <div>
         <p class="resultats">
           <strong><?= count($annonces) ?> annonce(s)</strong> trouvée(s)
-          <?= $ville !== '' ? 'près de ' . htmlspecialchars($ville) : '' ?>
+          <?= $filtreVille !== '' ? 'près de ' . e($filtreVille) : '' ?>
         </p>
 
         <?php if (empty($annonces)): ?>
@@ -73,48 +68,50 @@ $ville = trim($_GET['ville'] ?? '');
             <p>😿 Aucune annonce ne correspond à votre recherche.</p>
             <a href="index.php?action=liste" class="btn btn--contour">Voir toutes les annonces</a>
           </div>
-        <?php endif; ?>
-
-        <div class="cartes-grille">
-          <?php foreach ($annonces as $a): ?>
-            <?php $urgente = $a->estUrgente(); ?>
-            <article class="carte <?= $urgente ? 'carte--urgente' : '' ?>">
-              <div class="carte-visuel visuel--<?= strtolower($a->type_animal) ?>">
-                <span class="carte-emoji"><?= emojiAnimal($a->type_animal) ?></span>
-                <?php if ($urgente): ?>
-                  <span class="etiquette etiquette--urgence">Urgence (-48h)</span>
-                <?php else: ?>
-                  <span class="etiquette">📍 <?= htmlspecialchars($a->ville) ?></span>
-                <?php endif; ?>
-                <span class="carte-statut"><?= badgeStatut($a->statut) ?></span>
-              </div>
-
-              <div class="carte-corps">
-                <div class="carte-titre">
-                  <h3><?= htmlspecialchars($a->titre) ?></h3>
-                  <span class="avatar" title="Publiée par <?= htmlspecialchars($a->nom_proprietaire) ?>">
-                    <?= initiale($a->nom_proprietaire) ?>
-                  </span>
+        <?php else: ?>
+          <div class="cartes-grille">
+            <?php foreach ($annonces as $a): ?>
+              <?php $urgente = $a->estUrgente(); ?>
+              <article class="carte <?= $urgente ? 'carte--urgente' : '' ?>">
+                <div class="carte-visuel <?= Affichage::classeVisuel($a->animal) ?>">
+                  <span class="carte-emoji"><?= Affichage::emoji($a->animal) ?></span>
+                  <?php if ($urgente): ?>
+                    <span class="etiquette etiquette--urgence">Urgence (-48h)</span>
+                  <?php else: ?>
+                    <span class="etiquette">📍 <?= e($a->ville) ?></span>
+                  <?php endif; ?>
+                  <span class="carte-statut"><?= Affichage::badge($a->statut) ?></span>
                 </div>
 
-                <ul class="liste-points">
-                  <li class="<?= $urgente ? 'point-rouge' : 'point-corail' ?>">
-                    <?= periode($a->date_debut, $a->date_fin) ?>
-                  </li>
-                  <li><?= htmlspecialchars($a->type_animal) ?> · <?= htmlspecialchars($a->ville) ?></li>
-                  <li><?= htmlspecialchars(extrait($a->description)) ?></li>
-                </ul>
+                <div class="carte-corps">
+                  <div class="carte-titre">
+                    <h3><?= e($a->titre) ?></h3>
+                    <span class="avatar" title="Publiée par <?= e($a->proprietaire) ?>">
+                      <?= Affichage::initiale($a->proprietaire) ?>
+                    </span>
+                  </div>
 
-                <a href="index.php?action=fiche&id=<?= $a->id ?>"
-                   class="btn btn--bloc <?= $urgente ? 'btn--rouge' : 'btn--sombre' ?>">
-                  <?= $urgente ? 'Sauver la situation !' : 'Proposer mes services' ?>
-                </a>
-              </div>
-            </article>
-          <?php endforeach; ?>
-        </div>
+                  <ul class="liste-points">
+                    <li class="<?= $urgente ? 'point-rouge' : 'point-corail' ?>">
+                      <?= e(Affichage::periode($a->date_debut, $a->date_fin)) ?>
+                    </li>
+                    <li><?= e($a->animal) ?> · <?= e($a->ville) ?> · par <?= e($a->proprietaire) ?></li>
+                    <li><?= Affichage::extrait($a->description) ?></li>
+                  </ul>
+
+                  <a href="index.php?action=detail&id=<?= $a->id ?>"
+                     class="btn btn--bloc <?= $urgente ? 'btn--rouge' : 'btn--sombre' ?>">
+                    <?= $urgente ? 'Sauver la situation !' : 'Proposer mes services' ?>
+                  </a>
+                </div>
+              </article>
+            <?php endforeach; ?>
+          </div>
+        <?php endif; ?>
       </div>
 
     </div>
   </section>
 </form>
+
+<?php require ROOT . '/app/views/layout/footer.php'; ?>

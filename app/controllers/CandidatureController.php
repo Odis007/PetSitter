@@ -1,90 +1,145 @@
 <?php
+// app/controllers/CandidatureController.php
 
-class CandidatureController {
+class CandidatureController
+{
+    // POST : un gardien postule à l'annonce ?id=...
+    public function postuler(): void
+    {
+        AuthController::exigerConnexion();
+        Securite::exigerPost();
 
-  // Postuler à une annonce (formulaire POST de la fiche annonce)
-  public function postuler(): void {
-    $idGardien = requireLogin();
-    $idAnnonce = (int) ($_POST['id_annonce'] ?? 0);
-    $annonce = Annonce::trouver($idAnnonce);
+        $annonce = Annonce::trouver((int) ($_GET['id'] ?? 0));
+        if ($annonce === null) {
+            Erreur::afficher(404, 'Annonce introuvable.');
+        }
 
-    if ($annonce === null || $annonce->statut !== 'ouverte') {
-      flash("Cette annonce n'accepte plus de candidatures.", 'erreur');
-      rediriger('index.php');
-    }
-    if ($annonce->id_proprietaire === $idGardien) {
-      flash('Vous ne pouvez pas postuler à votre propre annonce.', 'erreur');
-      rediriger("index.php?action=fiche&id=$idAnnonce");
-    }
-    if (Candidature::dejaCandidat($idAnnonce, $idGardien)) {
-      flash('Vous avez déjà postulé à cette annonce.', 'erreur');
-      rediriger("index.php?action=fiche&id=$idAnnonce");
-    }
+        $idGardien = AuthController::utilisateurId();
 
-    $message = trim($_POST['message'] ?? '');
-    if ($message === '') {
-      flash('Écrivez un message de motivation.', 'erreur');
-      rediriger("index.php?action=fiche&id=$idAnnonce");
-    }
+        // Règles métier
+        if (!$annonce->estOuverte()) {
+            $_SESSION['flash_erreur'] = 'Cette annonce n\'accepte plus de candidatures.';
+            redirect('detail', ['id' => $annonce->id]);
+        }
+        if ($annonce->estProprietaire($idGardien)) {
+            $_SESSION['flash_erreur'] = 'Vous ne pouvez pas postuler à votre propre annonce.';
+            redirect('detail', ['id' => $annonce->id]);
+        }
+        if (Candidature::existe($annonce->id, $idGardien)) {
+            $_SESSION['flash_erreur'] = 'Vous avez déjà postulé à cette annonce.';
+            redirect('detail', ['id' => $annonce->id]);
+        }
 
-    Candidature::creer($idAnnonce, $idGardien, $message);
-    flash('Candidature envoyée !');
-    rediriger('index.php?action=mesCandidatures');
-  }
+        $message = trim($_POST['message'] ?? '');
+        $longueur = mb_strlen($message);
+        if ($longueur < 10 || $longueur > 500) {
+            $_SESSION['flash_erreur'] = 'Le message doit faire entre 10 et 500 caractères.';
+            redirect('detail', ['id' => $annonce->id]);
+        }
 
-  // Retirer une de MES candidatures (formulaire POST)
-  public function retirer(): void {
-    $idGardien = requireLogin();
-    $candidature = Candidature::trouver((int) ($_POST['id_candidature'] ?? 0));
-
-    // Contrôle d'accès : seulement ses propres candidatures
-    if ($candidature === null || $candidature->id_gardien !== $idGardien) {
-      flash("Vous n'avez pas accès à cette candidature.", 'erreur');
-      rediriger('index.php?action=mesCandidatures');
-    }
-    if ($candidature->statut !== 'en_attente') {
-      flash('Seule une candidature en attente peut être retirée.', 'erreur');
-      rediriger('index.php?action=mesCandidatures');
+        Candidature::creer($annonce->id, $idGardien, $message);
+        $_SESSION['flash'] = 'Candidature envoyée !';
+        redirect('detail', ['id' => $annonce->id]);
     }
 
-    $candidature->supprimer();
-    flash('Candidature retirée.');
-    rediriger('index.php?action=mesCandidatures');
-  }
+    // POST : le gardien retire sa candidature tant qu'elle est en attente
+    public function retirer(): void
+    {
+        AuthController::exigerConnexion();
+        Securite::exigerPost();
 
-  // Suivi de mes candidatures
-  public function mesCandidatures(): void {
-    $idGardien = requireLogin();
-    $candidatures = Candidature::parGardien($idGardien);
+        $candidature = Candidature::trouver((int) ($_GET['id'] ?? 0));
+        if ($candidature === null) {
+            Erreur::afficher(404, 'Candidature introuvable.');
+        }
+        if ($candidature->id_gardien !== AuthController::utilisateurId()) {
+            Erreur::afficher(403, 'Accès interdit : ce n\'est pas votre candidature.');
+        }
+        if ($candidature->statut !== 'en_attente') {
+            $_SESSION['flash_erreur'] = 'Seule une candidature en attente peut être retirée.';
+            redirect('mes_candidatures');
+        }
 
-    // Je peux noter le propriétaire si j'ai été accepté et que la garde est terminée
-    $peutNoter = [];
-    foreach ($candidatures as $c) {
-      $peutNoter[$c->id] = $c->statut === 'acceptee'
-        && $c->statut_annonce === 'terminee'
-        && !Avis::dejaNote($c->id_annonce, $idGardien);
+        Candidature::supprimer($candidature->id);
+        $_SESSION['flash'] = 'Candidature retirée.';
+        redirect('mes_candidatures');
     }
 
-    vue('candidatures/mes_candidatures', [
-      'candidatures' => $candidatures,
-      'peutNoter'    => $peutNoter,
-    ]);
-  }
+    // GET : mes candidatures (côté gardien)
+    public function mesCandidatures(): void
+    {
+        AuthController::exigerConnexion();
+        $idGardien = AuthController::utilisateurId();
 
-  // Profil public d'un membre : nom, note moyenne, gardes réalisées, avis reçus
-  public function profil(): void {
-    $id = (int) ($_GET['id'] ?? 0);
-    $utilisateur = Utilisateur::trouver($id);
-    if ($utilisateur === null) {
-      flash("Ce profil n'existe pas.", 'erreur');
-      rediriger('index.php');
+        $candidatures = Candidature::parGardien($idGardien);
+
+        // Lien « Laisser un avis » : candidature acceptée, garde terminée, pas encore noté
+        $peutNoter = [];
+        foreach ($candidatures as $c) {
+            $peutNoter[$c->id] = $c->statut === 'acceptee'
+                && $c->annonce_statut === 'terminee'
+                && !Avis::existe($c->id_annonce, $idGardien);
+        }
+
+        $titre = 'Mes candidatures';
+        require ROOT . '/app/views/candidatures/mes_candidatures.php';
     }
 
-    vue('utilisateurs/profil', [
-      'utilisateur' => $utilisateur,
-      'note'        => Avis::noteMoyenne($id),
-      'nbGardes'    => Candidature::nombreGardesRealisees($id),
-      'avis'        => Avis::recusPar($id),
-    ]);
-  }
+    // GET : candidatures reçues sur UNE de mes annonces (côté propriétaire)
+    public function recues(): void
+    {
+        AuthController::exigerConnexion();
+
+        $annonce = Annonce::trouver((int) ($_GET['id'] ?? 0));
+        if ($annonce === null) {
+            Erreur::afficher(404, 'Annonce introuvable.');
+        }
+        if (!$annonce->estProprietaire(AuthController::utilisateurId())) {
+            Erreur::afficher(403, 'Accès interdit : ce n\'est pas votre annonce.');
+        }
+
+        $candidatures = Candidature::parAnnonce($annonce->id);
+        foreach ($candidatures as $c) {
+            $c->note_gardien = Avis::noteMoyenne($c->id_gardien);
+        }
+
+        $titre = 'Candidatures reçues';
+        require ROOT . '/app/views/candidatures/recues.php';
+    }
+
+    // POST : le propriétaire accepte ou refuse une candidature
+    public function repondre(): void
+    {
+        AuthController::exigerConnexion();
+        Securite::exigerPost();
+
+        $candidature = Candidature::trouver((int) ($_GET['id'] ?? 0));
+        if ($candidature === null) {
+            Erreur::afficher(404, 'Candidature introuvable.');
+        }
+
+        $annonce = Annonce::trouver($candidature->id_annonce);
+        if (!$annonce->estProprietaire(AuthController::utilisateurId())) {
+            Erreur::afficher(403, 'Accès interdit : ce n\'est pas votre annonce.');
+        }
+
+        $decision = $_POST['decision'] ?? '';
+        if (!in_array($decision, ['acceptee', 'refusee'], true)) {
+            Erreur::afficher(400, 'Décision invalide.');
+        }
+
+        if ($candidature->statut !== 'en_attente' || !$annonce->estOuverte()) {
+            $_SESSION['flash_erreur'] = 'Cette candidature ne peut plus être traitée.';
+            redirect('recues', ['id' => $annonce->id]);
+        }
+
+        if ($decision === 'acceptee') {
+            Annonce::cloturer($annonce->id, $candidature->id);   // transaction : 3 mises à jour
+            $_SESSION['flash'] = 'Candidature acceptée : l\'annonce est pourvue.';
+        } else {
+            Candidature::changerStatut($candidature->id, 'refusee');
+            $_SESSION['flash'] = 'Candidature refusée.';
+        }
+        redirect('recues', ['id' => $annonce->id]);
+    }
 }

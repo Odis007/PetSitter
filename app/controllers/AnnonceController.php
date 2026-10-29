@@ -1,209 +1,260 @@
 <?php
+// app/controllers/AnnonceController.php
 
-class AnnonceController {
+class AnnonceController
+{
+    // GET : page d'accueil
+    public function accueil(): void
+    {
+        $annonces       = Annonce::recentes(3);
+        $meilleurMembre = Avis::meilleurMembre();
+        $avis           = Avis::tous();
+        $nbAvis         = count($avis);
+        $derniersAvis   = array_slice($avis, 0, 3);
 
-  // Page d'accueil
-  public function accueil(): void {
-    $avis = Avis::tous();
-
-    vue('accueil', [
-      'pleineLargeur'   => true, // la page occupe toute la largeur de l'écran
-      'annonces'        => Annonce::recentes(3),
-      'meilleurMembre'  => Avis::meilleurMembre(),
-      'nbAvis'          => count($avis),
-      'derniersAvis'    => array_slice($avis, 0, 3),
-    ]);
-  }
-
-  // Annonces disponibles (statut "ouverte")
-  public function liste(): void {
-    $annonces = Annonce::toutesOuvertes();
-    vue('annonces/liste', ['annonces' => $annonces, 'pleineLargeur' => true]);
-  }
-
-  // Annonces disponibles filtrées (barre de recherche + filtres)
-  public function rechercher(): void {
-    $annonces = Annonce::rechercher(
-      trim($_GET['ville'] ?? ''),
-      $_GET['type_animal'] ?? '',
-      $_GET['date'] ?? '',
-      !empty($_GET['urgent']),
-      $_GET['tri'] ?? 'proches'
-    );
-    vue('annonces/liste', ['annonces' => $annonces, 'pleineLargeur' => true]);
-  }
-
-  // Détail d'une annonce
-  public function fiche(): void {
-    $annonce = Annonce::trouver((int) ($_GET['id'] ?? 0));
-    if ($annonce === null) {
-      flash("Cette annonce n'existe pas.", 'erreur');
-      rediriger('index.php');
+        $titre = 'Accueil';
+        $pleineLargeur = true;   // la page occupe toute la largeur de l'écran
+        require ROOT . '/app/views/accueil.php';
     }
 
-    $idConnecte = $_SESSION['user_id'] ?? null;
+    // GET : liste publique avec filtres
+    public function liste(): void
+    {
+        $filtreAnimal = trim($_GET['animal'] ?? '');
+        $filtreVille  = trim($_GET['ville'] ?? '');
+        $filtreDate   = trim($_GET['date'] ?? '');
+        $filtreUrgent = !empty($_GET['urgent']);
+        $filtreTri    = ($_GET['tri'] ?? '') === 'recentes' ? 'recentes' : 'proches';
 
-    vue('annonces/fiche', [
-      'annonce'          => $annonce,
-      'idConnecte'       => $idConnecte,
-      'estProprietaire'  => $idConnecte === $annonce->id_proprietaire,
-      'dejaCandidat'     => $idConnecte && Candidature::dejaCandidat($annonce->id, $idConnecte),
-      'noteProprietaire' => Avis::noteMoyenne($annonce->id_proprietaire),
-    ]);
-  }
+        // Une date mal formée est simplement ignorée
+        if ($filtreDate !== '' && self::lireDate($filtreDate) === null) {
+            $filtreDate = '';
+        }
 
-  // Afficher le formulaire (GET) ou créer l'annonce (POST)
-  public function creer(): void {
-    $idUtilisateur = requireLogin();
+        $annonces = Annonce::rechercher($filtreAnimal, $filtreVille, $filtreDate, $filtreUrgent, $filtreTri);
 
-    if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-      vue('annonces/formulaire', ['erreurs' => [], 'valeurs' => [], 'annonce' => null]);
-      return;
+        $titre = 'Annonces ouvertes';
+        $pleineLargeur = true;
+        require ROOT . '/app/views/annonces/liste.php';
     }
 
-    $erreurs = validerAnnonce($_POST);
-    if (!empty($erreurs)) {
-      vue('annonces/formulaire', ['erreurs' => $erreurs, 'valeurs' => $_POST, 'annonce' => null]);
-      return;
+    // GET : fiche d'une annonce
+    public function detail(): void
+    {
+        $annonce = $this->chargerAnnonce();                  // 404 si introuvable
+        $idUtilisateur = AuthController::utilisateurId();    // 0 si visiteur
+        $estProprio = $idUtilisateur !== 0 && $annonce->estProprietaire($idUtilisateur);
+
+        // Ce que l'utilisateur peut faire sur cette annonce (décidé ICI, pas dans la vue)
+        $aPostule = $idUtilisateur !== 0 && Candidature::existe($annonce->id, $idUtilisateur);
+        $peutPostuler = $idUtilisateur !== 0 && !$estProprio && $annonce->estOuverte() && !$aPostule;
+        $nbCandidatures = $estProprio ? count(Candidature::parAnnonce($annonce->id)) : 0;
+
+        $peutNoter = false;
+        if ($idUtilisateur !== 0 && $annonce->statut === 'terminee') {
+            $peutNoter = Avis::cibleDe($annonce, $idUtilisateur) !== null
+                && !Avis::existe($annonce->id, $idUtilisateur);
+        }
+
+        $noteProprietaire = Avis::noteMoyenne($annonce->id_proprietaire);
+
+        $titre = $annonce->titre;
+        require ROOT . '/app/views/annonces/detail.php';
     }
 
-    $id = Annonce::creer(
-      $idUtilisateur, trim($_POST['titre']), $_POST['type_animal'],
-      trim($_POST['ville']), $_POST['date_debut'],
-      $_POST['date_fin'], trim($_POST['description'])
-    );
-    flash('Annonce publiée avec succès.');
-    rediriger("index.php?action=fiche&id=$id");
-  }
+    // GET : affiche le formulaire / POST : traite le formulaire
+    public function creer(): void
+    {
+        AuthController::exigerConnexion();
 
-  // Modifier une de MES annonces (formulaire pré-rempli en GET, enregistrement en POST)
-  public function modifier(): void {
-    $idUtilisateur = requireLogin();
-    $annonce = $this->annonceDuProprietaire((int) ($_GET['id'] ?? 0), $idUtilisateur);
+        $erreurs = [];
+        $data = self::donneesVides();
 
-    if ($annonce->statut !== 'ouverte') {
-      flash('Une annonce pourvue ou terminée ne peut plus être modifiée.', 'erreur');
-      rediriger('index.php?action=mesAnnonces');
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            Securite::verifier();
+            $data = self::lireFormulaire();
+            $erreurs = self::valider($data);
+
+            if (!$erreurs) {
+                $id = Annonce::creer($data, AuthController::utilisateurId());
+                $_SESSION['flash'] = 'Annonce publiée.';
+                redirect('detail', ['id' => $id]);
+            }
+        }
+
+        $titre = 'Publier une annonce';
+        $actionUrl = 'index.php?action=creer';
+        $bouton = 'Publier';
+        require ROOT . '/app/views/annonces/formulaire.php';
     }
 
-    if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-      // (array) transforme l'objet en tableau : ['titre' => ..., 'ville' => ...]
-      vue('annonces/formulaire', ['erreurs' => [], 'valeurs' => (array) $annonce, 'annonce' => $annonce]);
-      return;
+    public function modifier(): void
+    {
+        AuthController::exigerConnexion();
+        $annonce = $this->chargerAnnoncePourProprietaire();
+
+        $erreurs = [];
+        $data = [
+            'titre'       => $annonce->titre,
+            'animal'      => $annonce->animal,
+            'description' => $annonce->description,
+            'ville'       => $annonce->ville,
+            'date_debut'  => $annonce->date_debut,
+            'date_fin'    => $annonce->date_fin,
+        ];
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            Securite::verifier();
+            $data = self::lireFormulaire();
+            $erreurs = self::valider($data);
+
+            if (!$erreurs) {
+                Annonce::modifier($annonce->id, $data);
+                $_SESSION['flash'] = 'Annonce modifiée.';
+                redirect('detail', ['id' => $annonce->id]);
+            }
+        }
+
+        $titre = 'Modifier l\'annonce';
+        $actionUrl = 'index.php?action=modifier&id=' . $annonce->id;
+        $bouton = 'Enregistrer';
+        require ROOT . '/app/views/annonces/formulaire.php';
     }
 
-    $erreurs = validerAnnonce($_POST);
-    if (!empty($erreurs)) {
-      vue('annonces/formulaire', ['erreurs' => $erreurs, 'valeurs' => $_POST, 'annonce' => $annonce]);
-      return;
+    // POST uniquement : une suppression ne se fait jamais par un simple lien (GET)
+    public function supprimer(): void
+    {
+        AuthController::exigerConnexion();
+        Securite::exigerPost();
+
+        $annonce = $this->chargerAnnoncePourProprietaire();
+        Annonce::supprimer($annonce->id);
+
+        $_SESSION['flash'] = 'Annonce supprimée.';
+        redirect('mes_annonces');
     }
 
-    $annonce->modifier(
-      trim($_POST['titre']), $_POST['type_animal'], trim($_POST['ville']),
-      $_POST['date_debut'], $_POST['date_fin'], trim($_POST['description'])
-    );
-    flash('Annonce modifiée.');
-    rediriger("index.php?action=fiche&id=$annonce->id");
-  }
+    // POST : le propriétaire déclare la garde terminée (annonce pourvue -> terminée)
+    public function terminer(): void
+    {
+        AuthController::exigerConnexion();
+        Securite::exigerPost();
 
-  // Supprimer une de MES annonces (formulaire POST)
-  public function supprimer(): void {
-    $idUtilisateur = requireLogin();
-    $annonce = $this->annonceDuProprietaire((int) ($_POST['id_annonce'] ?? 0), $idUtilisateur);
+        $annonce = $this->chargerAnnoncePourProprietaire(false);
+        if ($annonce->statut !== 'pourvue') {
+            $_SESSION['flash_erreur'] = 'Seule une annonce pourvue peut être terminée.';
+            redirect('detail', ['id' => $annonce->id]);
+        }
 
-    // Une garde pourvue ou terminée garde son historique (candidatures, avis)
-    if ($annonce->statut !== 'ouverte') {
-      flash('Une annonce pourvue ou terminée ne peut plus être supprimée.', 'erreur');
-      rediriger('index.php?action=mesAnnonces');
+        Annonce::terminer($annonce->id);
+        $_SESSION['flash'] = 'Garde terminée : vous pouvez maintenant laisser un avis.';
+        redirect('detail', ['id' => $annonce->id]);
     }
 
-    $annonce->supprimer();
-    flash('Annonce supprimée.');
-    rediriger('index.php?action=mesAnnonces');
-  }
+    public function mesAnnonces(): void
+    {
+        AuthController::exigerConnexion();
+        $idUtilisateur = AuthController::utilisateurId();
 
-  // Mes annonces + mes statistiques de propriétaire
-  public function mesAnnonces(): void {
-    $idUtilisateur = requireLogin();
-    $annonces = Annonce::parProprietaire($idUtilisateur);
+        $annonces = Annonce::parProprietaire($idUtilisateur);
+        $stats = Annonce::statsProprietaire($idUtilisateur);
 
-    // Pour chaque garde terminée : est-ce que je peux encore noter le gardien ?
-    $peutNoter = [];
-    foreach ($annonces as $a) {
-      $peutNoter[$a->id] = $a->statut === 'terminee'
-        && !Avis::dejaNote($a->id, $idUtilisateur);
+        // Pour chaque garde terminée : puis-je encore noter mon gardien ?
+        $peutNoter = [];
+        foreach ($annonces as $a) {
+            $peutNoter[$a->id] = $a->statut === 'terminee'
+                && Avis::cibleDe($a, $idUtilisateur) !== null
+                && !Avis::existe($a->id, $idUtilisateur);
+        }
+
+        $titre = 'Mes annonces';
+        require ROOT . '/app/views/annonces/mes_annonces.php';
     }
 
-    vue('annonces/mes_annonces', [
-      'annonces'  => $annonces,
-      'peutNoter' => $peutNoter,
-      'stats'     => Annonce::statsProprietaire($idUtilisateur),
-    ]);
-  }
+    // ---------- Méthodes privées ----------
 
-  // Les candidatures reçues pour une de MES annonces
-  public function candidatures(): void {
-    $idUtilisateur = requireLogin();
-    $annonce = $this->annonceDuProprietaire((int) ($_GET['id'] ?? 0), $idUtilisateur);
+    private function chargerAnnonce(): Annonce
+    {
+        $id = (int) ($_GET['id'] ?? 0);
+        $annonce = Annonce::trouver($id);
 
-    $candidatures = Candidature::parAnnonce($annonce->id);
-    // On ajoute la note moyenne de chaque gardien
-    foreach ($candidatures as $c) {
-      $c->note_gardien = Avis::noteMoyenne($c->id_gardien);
+        if ($annonce === null) {
+            Erreur::afficher(404, 'Annonce introuvable.');
+        }
+        return $annonce;
     }
 
-    vue('annonces/candidatures', [
-      'annonce'      => $annonce,
-      'candidatures' => $candidatures,
-    ]);
-  }
+    // Charge l'annonce ET vérifie que l'utilisateur connecté en est le propriétaire.
+    // $exigerModifiable = false pour "terminer" (l'annonce est alors pourvue, pas ouverte).
+    private function chargerAnnoncePourProprietaire(bool $exigerModifiable = true): Annonce
+    {
+        $annonce = $this->chargerAnnonce();
 
-  // Valider un gardien (formulaire POST depuis la liste des candidatures)
-  public function valider(): void {
-    $idUtilisateur = requireLogin();
-
-    $candidature = Candidature::trouver((int) ($_POST['id_candidature'] ?? 0));
-    if ($candidature === null) {
-      flash("Cette candidature n'existe pas.", 'erreur');
-      rediriger('index.php?action=mesAnnonces');
+        if (!$annonce->estProprietaire(AuthController::utilisateurId())) {
+            Erreur::afficher(403, 'Accès interdit : ce n\'est pas votre annonce.');
+        }
+        if ($exigerModifiable && !$annonce->estModifiable()) {
+            $_SESSION['flash_erreur'] = 'Une annonce déjà pourvue ou terminée ne peut plus être modifiée.';
+            redirect('detail', ['id' => $annonce->id]);
+        }
+        return $annonce;
     }
 
-    $annonce = $this->annonceDuProprietaire($candidature->id_annonce, $idUtilisateur);
-
-    // Règle métier : un seul gardien par annonce
-    if ($annonce->statut !== 'ouverte') {
-      flash('Un gardien a déjà été choisi pour cette annonce.', 'erreur');
-      rediriger("index.php?action=candidatures&id=$annonce->id");
+    private static function donneesVides(): array
+    {
+        return [
+            'titre' => '', 'animal' => '', 'description' => '',
+            'ville' => '', 'date_debut' => '', 'date_fin' => '',
+        ];
     }
 
-    $annonce->cloturer($candidature->id);
-    flash('Gardien validé ! Les autres candidatures ont été refusées.');
-    rediriger("index.php?action=candidatures&id=$annonce->id");
-  }
-
-  // Clôture manuelle d'une garde (pourvue → terminée)
-  public function terminer(): void {
-    $idUtilisateur = requireLogin();
-    $annonce = $this->annonceDuProprietaire((int) ($_POST['id_annonce'] ?? 0), $idUtilisateur);
-
-    if ($annonce->statut !== 'pourvue') {
-      flash('Seule une garde pourvue peut être terminée.', 'erreur');
-      rediriger('index.php?action=mesAnnonces');
+    // Ne retient QUE les champs attendus (jamais $_POST en bloc)
+    private static function lireFormulaire(): array
+    {
+        $data = [];
+        foreach (array_keys(self::donneesVides()) as $champ) {
+            $data[$champ] = trim($_POST[$champ] ?? '');
+        }
+        return $data;
     }
 
-    $annonce->terminer();
-    flash('Garde terminée. Vous pouvez maintenant noter votre gardien.');
-    rediriger('index.php?action=mesAnnonces');
-  }
+    private static function valider(array $d): array
+    {
+        $erreurs = [];
 
-  // Récupère une annonce et vérifie qu'elle appartient bien à l'utilisateur.
-  // Sinon : message d'erreur et retour à "Mes annonces".
-  private function annonceDuProprietaire(int $idAnnonce, int $idUtilisateur): Annonce {
-    $annonce = Annonce::trouver($idAnnonce);
-    if ($annonce === null || $annonce->id_proprietaire !== $idUtilisateur) {
-      flash("Vous n'avez pas accès à cette annonce.", 'erreur');
-      rediriger('index.php?action=mesAnnonces');
+        if ($d['titre'] === '' || mb_strlen($d['titre']) > 120) {
+            $erreurs[] = 'Le titre est obligatoire (120 caractères maximum).';
+        }
+        if (!in_array($d['animal'], Annonce::ANIMAUX, true)) {
+            $erreurs[] = 'Choisissez un type d\'animal dans la liste.';
+        }
+        if (mb_strlen($d['description']) < 10) {
+            $erreurs[] = 'La description doit faire au moins 10 caractères.';
+        }
+        if ($d['ville'] === '') {
+            $erreurs[] = 'La ville est obligatoire.';
+        }
+
+        $debut = self::lireDate($d['date_debut']);
+        $fin   = self::lireDate($d['date_fin']);
+
+        if ($debut === null || $fin === null) {
+            $erreurs[] = 'Les dates sont obligatoires et doivent être valides.';
+        } else {
+            if ($debut < new DateTimeImmutable('today')) {
+                $erreurs[] = 'La date de début ne peut pas être dans le passé.';
+            }
+            if ($fin < $debut) {
+                $erreurs[] = 'La date de fin doit être après la date de début.';
+            }
+        }
+        return $erreurs;
     }
-    return $annonce;
-  }
+
+    // Retourne un objet date, ou null si la chaîne n'est pas une vraie date AAAA-MM-JJ
+    private static function lireDate(string $valeur): ?DateTimeImmutable
+    {
+        $date = DateTimeImmutable::createFromFormat('!Y-m-d', $valeur);
+        return ($date && $date->format('Y-m-d') === $valeur) ? $date : null;
+    }
 }

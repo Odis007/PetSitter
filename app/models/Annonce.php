@@ -1,255 +1,298 @@
 <?php
+// app/models/Annonce.php
 
-class Annonce {
-  // Une propriété par colonne de la table annonces
-  public int $id;
-  public string $titre;
-  public string $type_animal;
-  public string $ville;
-  public string $date_debut;
-  public string $date_fin;
-  public ?string $description = null;
-  public string $statut;
-  public int $id_proprietaire;
+class Annonce
+{
+    public const ANIMAUX = ['Chien', 'Chat', 'Lapin', 'Rongeur', 'Oiseau', 'Poisson', 'Autre'];
 
-  // Remplis seulement par les requêtes qui font une jointure
-  public ?string $nom_proprietaire = null;
-  public int $nb_candidatures = 0;
+    public function __construct(
+        public int $id = 0,
+        public int $id_proprietaire = 0,
+        public string $titre = '',
+        public string $animal = '',
+        public string $description = '',
+        public string $ville = '',
+        public string $date_debut = '',
+        public string $date_fin = '',
+        public string $statut = 'ouverte',
+        public ?string $proprietaire = null,   // nom, issu d'une jointure
+        public int $nb_candidatures = 0        // issu d'une sous-requête
+    ) {}
 
-  // ---------- Lire des annonces ----------
-
-  // Toutes les annonces encore ouvertes (et pas encore passées)
-  public static function toutesOuvertes(): array {
-    $stmt = Database::get()->query(
-      "SELECT a.*, u.nom AS nom_proprietaire
-       FROM annonces a
-       JOIN utilisateurs u ON u.id = a.id_proprietaire
-       WHERE a.statut='ouverte' AND a.date_fin >= CURDATE()
-       ORDER BY a.date_debut"
-    );
-    return $stmt->fetchAll(PDO::FETCH_CLASS, self::class);
-  }
-
-  // Annonces ouvertes filtrées.
-  // $date   : seulement les gardes qui commencent à partir de ce jour
-  // $urgent : seulement les gardes qui commencent dans les 48h
-  // $tri    : 'proches' (date de garde) ou 'recentes' (dernières publiées)
-  public static function rechercher(
-    ?string $ville, ?string $typeAnimal,
-    ?string $date = null, bool $urgent = false, string $tri = 'proches'
-  ): array {
-    $sql = "SELECT a.*, u.nom AS nom_proprietaire
-            FROM annonces a
-            JOIN utilisateurs u ON u.id = a.id_proprietaire
-            WHERE a.statut='ouverte' AND a.date_fin >= CURDATE()";
-    $params = [];
-
-    if (!empty($ville)) {
-      // LIKE + % : "par" trouve aussi "Paris"
-      $sql .= " AND a.ville LIKE ?";
-      $params[] = '%' . $ville . '%';
-    }
-    if (!empty($typeAnimal)) {
-      $sql .= " AND a.type_animal = ?";
-      $params[] = $typeAnimal;
-    }
-    if (!empty($date)) {
-      $sql .= " AND a.date_debut >= ?";
-      $params[] = $date;
-    }
-    if ($urgent) {
-      $sql .= " AND a.date_debut <= DATE_ADD(CURDATE(), INTERVAL 2 DAY)";
+    public static function hydrate(array $row): self
+    {
+        return new self(
+            (int) $row['id'],
+            (int) $row['id_proprietaire'],
+            $row['titre'],
+            $row['animal'],
+            $row['description'],
+            $row['ville'],
+            $row['date_debut'],
+            $row['date_fin'],
+            $row['statut'],
+            $row['proprietaire'] ?? null,
+            (int) ($row['nb_candidatures'] ?? 0)
+        );
     }
 
-    // On n'insère jamais $tri directement dans le SQL : on choisit parmi des valeurs sûres
-    $sql .= match ($tri) {
-      'recentes' => " ORDER BY a.id DESC",
-      default    => " ORDER BY a.date_debut",
-    };
+    // ---------- LECTURE (Read) ----------
 
-    $stmt = Database::get()->prepare($sql);
-    $stmt->execute($params);
-    return $stmt->fetchAll(PDO::FETCH_CLASS, self::class);
-  }
-
-  // Les dernières annonces publiées, avec leur nombre de candidatures (page d'accueil)
-  public static function recentes(int $nombre): array {
-    $stmt = Database::get()->query(
-      "SELECT a.*, u.nom AS nom_proprietaire,
-              (SELECT COUNT(*) FROM candidatures c WHERE c.id_annonce = a.id) AS nb_candidatures
-       FROM annonces a
-       JOIN utilisateurs u ON u.id = a.id_proprietaire
-       ORDER BY a.id DESC
-       LIMIT " . $nombre // $nombre est un int : aucun risque d'injection
-    );
-    return $stmt->fetchAll(PDO::FETCH_CLASS, self::class);
-  }
-
-  // Une annonce est urgente si elle est ouverte et commence dans moins de 48h
-  public function estUrgente(): bool {
-    return $this->statut === 'ouverte'
-      && $this->date_debut <= date('Y-m-d', strtotime('+2 days'));
-  }
-
-  // Une annonce par son id, avec le nom du propriétaire (null si elle n'existe pas)
-  public static function trouver(int $id): ?Annonce {
-    $stmt = Database::get()->prepare(
-      "SELECT a.*, u.nom AS nom_proprietaire
-       FROM annonces a
-       JOIN utilisateurs u ON u.id = a.id_proprietaire
-       WHERE a.id = ?"
-    );
-    $stmt->execute([$id]);
-    return $stmt->fetchObject(self::class) ?: null;
-  }
-
-  // Les annonces d'un propriétaire
-  public static function parProprietaire(int $idProprietaire): array {
-    $stmt = Database::get()->prepare(
-      "SELECT * FROM annonces
-       WHERE id_proprietaire = ?
-       ORDER BY date_debut DESC"
-    );
-    $stmt->execute([$idProprietaire]);
-    return $stmt->fetchAll(PDO::FETCH_CLASS, self::class);
-  }
-
-  // ---------- Créer une annonce ----------
-
-  // Créer une annonce, renvoie son id
-  public static function creer(
-    int $idProprietaire, string $titre,
-    string $typeAnimal, string $ville,
-    string $dateDebut, string $dateFin,
-    string $description
-  ): int {
-    $pdo = Database::get();
-    $pdo->prepare(
-      "INSERT INTO annonces
-       (titre, type_animal, ville, date_debut,
-        date_fin, description, statut, id_proprietaire)
-       VALUES (?, ?, ?, ?, ?, ?, 'ouverte', ?)"
-    )->execute([$titre, $typeAnimal, $ville,
-      $dateDebut, $dateFin, $description, $idProprietaire]);
-    return (int) $pdo->lastInsertId();
-  }
-
-  // ---------- Modifier / supprimer ----------
-
-  // Modifier cette annonce (le statut et le propriétaire ne changent pas)
-  public function modifier(
-    string $titre, string $typeAnimal, string $ville,
-    string $dateDebut, string $dateFin, string $description
-  ): void {
-    Database::get()->prepare(
-      "UPDATE annonces
-       SET titre = ?, type_animal = ?, ville = ?,
-           date_debut = ?, date_fin = ?, description = ?
-       WHERE id = ?"
-    )->execute([$titre, $typeAnimal, $ville,
-      $dateDebut, $dateFin, $description, $this->id]);
-  }
-
-  // Supprimer cette annonce (ses candidatures partent avec : ON DELETE CASCADE)
-  public function supprimer(): void {
-    Database::get()->prepare("DELETE FROM annonces WHERE id = ?")->execute([$this->id]);
-  }
-
-  // ---------- Cycle de vie : ouverte → pourvue → terminee ----------
-
-  // Valider un gardien : sa candidature est acceptée,
-  // toutes les autres sont refusées, et l'annonce passe à "pourvue".
-  public function cloturer(int $idCandidatureRetenue): void {
-    $pdo = Database::get();
-
-    // Transaction : soit les 3 requêtes réussissent, soit aucune n'est appliquée
-    $pdo->beginTransaction();
-    try {
-      $pdo->prepare(
-        "UPDATE candidatures SET statut = 'acceptee'
-         WHERE id = ? AND id_annonce = ?"
-      )->execute([$idCandidatureRetenue, $this->id]);
-
-      $pdo->prepare(
-        "UPDATE candidatures SET statut = 'refusee'
-         WHERE id_annonce = ? AND id != ?"
-      )->execute([$this->id, $idCandidatureRetenue]);
-
-      $pdo->prepare(
-        "UPDATE annonces SET statut = 'pourvue' WHERE id = ?"
-      )->execute([$this->id]);
-
-      $pdo->commit();   // on valide tout
-    } catch (Exception $e) {
-      $pdo->rollBack(); // on annule tout
-      throw $e;
+    /** @return Annonce[] */
+    public static function toutesOuvertes(): array
+    {
+        $sql = "SELECT a.*, u.nom AS proprietaire
+                FROM annonces a
+                JOIN utilisateurs u ON u.id = a.id_proprietaire
+                WHERE a.statut = 'ouverte'
+                ORDER BY a.date_debut ASC";
+        $rows = Database::get()->query($sql)->fetchAll();
+        return array_map([self::class, 'hydrate'], $rows);
     }
 
-    $this->statut = 'pourvue';
-  }
+    // Requête construite dynamiquement : un AND par filtre renseigné.
+    // $date   : gardes qui commencent à partir de ce jour
+    // $urgent : gardes qui commencent dans les 48 h
+    // $tri    : 'proches' (date de garde) ou 'recentes' (dernières publiées)
+    /** @return Annonce[] */
+    public static function rechercher(
+        string $animal = '', string $ville = '',
+        string $date = '', bool $urgent = false, string $tri = 'proches'
+    ): array {
+        $sql = "SELECT a.*, u.nom AS proprietaire
+                FROM annonces a
+                JOIN utilisateurs u ON u.id = a.id_proprietaire
+                WHERE a.statut = 'ouverte' AND a.date_fin >= CURDATE()";
+        $params = [];
 
-  // Clôture manuelle d'une garde par le propriétaire
-  public function terminer(): void {
-    Database::get()->prepare(
-      "UPDATE annonces SET statut = 'terminee' WHERE id = ?"
-    )->execute([$this->id]);
-    $this->statut = 'terminee';
-  }
+        if ($animal !== '') {
+            $sql .= " AND a.animal = :animal";
+            $params['animal'] = $animal;
+        }
+        if ($ville !== '') {
+            $sql .= " AND a.ville LIKE :ville";
+            $params['ville'] = '%' . $ville . '%';
+        }
+        if ($date !== '') {
+            $sql .= " AND a.date_debut >= :date";
+            $params['date'] = $date;
+        }
+        if ($urgent) {
+            $sql .= " AND a.date_debut <= DATE_ADD(CURDATE(), INTERVAL 2 DAY)";
+        }
 
-  // Clôture automatique : les gardes pourvues dont la date de fin est passée
-  // deviennent "terminee". Appelée à chaque chargement de page (dans index.php).
-  public static function terminerExpirees(): void {
-    Database::get()->query(
-      "UPDATE annonces SET statut = 'terminee'
-       WHERE statut = 'pourvue' AND date_fin < CURDATE()"
-    );
-  }
+        // Liste blanche : $tri n'est JAMAIS injecté dans le SQL
+        // (les paramètres liés ne fonctionnent pas pour les noms de colonnes)
+        $sql .= match ($tri) {
+            'recentes' => " ORDER BY a.created_at DESC",
+            default    => " ORDER BY a.date_debut ASC",
+        };
 
-  // L'id du gardien retenu pour cette annonce (null si aucun)
-  public function idGardienRetenu(): ?int {
-    $stmt = Database::get()->prepare(
-      "SELECT id_gardien FROM candidatures
-       WHERE id_annonce = ? AND statut = 'acceptee'"
-    );
-    $stmt->execute([$this->id]);
-    $id = $stmt->fetchColumn();
-    return $id === false ? null : (int) $id;
-  }
+        $stmt = Database::get()->prepare($sql);
+        $stmt->execute($params);
+        return array_map([self::class, 'hydrate'], $stmt->fetchAll());
+    }
 
-  // ---------- Statistiques ----------
+    // Les dernières annonces publiées, avec leur nombre de candidatures (page d'accueil)
+    /** @return Annonce[] */
+    public static function recentes(int $nombre): array
+    {
+        $stmt = Database::get()->prepare(
+            "SELECT a.*, u.nom AS proprietaire,
+                    (SELECT COUNT(*) FROM candidatures c WHERE c.id_annonce = a.id) AS nb_candidatures
+             FROM annonces a
+             JOIN utilisateurs u ON u.id = a.id_proprietaire
+             ORDER BY a.created_at DESC, a.id DESC
+             LIMIT :nombre"
+        );
+        $stmt->bindValue('nombre', $nombre, PDO::PARAM_INT);   // LIMIT exige un vrai entier
+        $stmt->execute();
+        return array_map([self::class, 'hydrate'], $stmt->fetchAll());
+    }
 
-  // Statistiques d'un propriétaire : nombre de gardes confiées et gardien le plus sollicité
-  public static function statsProprietaire(int $idProprietaire): array {
-    $pdo = Database::get();
+    public static function trouver(int $id): ?self
+    {
+        $stmt = Database::get()->prepare(
+            "SELECT a.*, u.nom AS proprietaire
+             FROM annonces a
+             JOIN utilisateurs u ON u.id = a.id_proprietaire
+             WHERE a.id = :id"
+        );
+        $stmt->execute(['id' => $id]);
+        $row = $stmt->fetch();
+        return $row ? self::hydrate($row) : null;
+    }
 
-    $stmt = $pdo->prepare(
-      "SELECT COUNT(*) FROM annonces
-       WHERE id_proprietaire = ? AND statut IN ('pourvue', 'terminee')"
-    );
-    $stmt->execute([$idProprietaire]);
-    $nbGardes = (int) $stmt->fetchColumn();
+    // Le nombre de candidatures vient d'une sous-requête : une seule requête
+    // pour toutes les annonces (et non une par annonce : problème "N+1")
+    /** @return Annonce[] */
+    public static function parProprietaire(int $idProprietaire): array
+    {
+        $stmt = Database::get()->prepare(
+            "SELECT a.*, u.nom AS proprietaire,
+                    (SELECT COUNT(*) FROM candidatures c WHERE c.id_annonce = a.id) AS nb_candidatures
+             FROM annonces a
+             JOIN utilisateurs u ON u.id = a.id_proprietaire
+             WHERE a.id_proprietaire = :id
+             ORDER BY a.created_at DESC"
+        );
+        $stmt->execute(['id' => $idProprietaire]);
+        return array_map([self::class, 'hydrate'], $stmt->fetchAll());
+    }
 
-    // Le gardien que ce propriétaire a choisi le plus souvent
-    $stmt = $pdo->prepare(
-      "SELECT u.id, u.nom, COUNT(*) AS nb
-       FROM candidatures c
-       JOIN annonces a ON a.id = c.id_annonce
-       JOIN utilisateurs u ON u.id = c.id_gardien
-       WHERE a.id_proprietaire = ? AND c.statut = 'acceptee'
-       GROUP BY u.id, u.nom
-       ORDER BY nb DESC
-       LIMIT 1"
-    );
-    $stmt->execute([$idProprietaire]);
-    $gardienPrefere = $stmt->fetch(PDO::FETCH_OBJ) ?: null;
+    // ---------- ÉCRITURE (Create / Update / Delete) ----------
 
-    return ['nbGardes' => $nbGardes, 'gardienPrefere' => $gardienPrefere];
-  }
+    public static function creer(array $d, int $idProprietaire): int
+    {
+        $stmt = Database::get()->prepare(
+            "INSERT INTO annonces
+                (id_proprietaire, titre, animal, description, ville, date_debut, date_fin)
+             VALUES
+                (:proprio, :titre, :animal, :description, :ville, :debut, :fin)"
+        );
+        $stmt->execute([
+            'proprio'     => $idProprietaire,
+            'titre'       => $d['titre'],
+            'animal'      => $d['animal'],
+            'description' => $d['description'],
+            'ville'       => $d['ville'],
+            'debut'       => $d['date_debut'],
+            'fin'         => $d['date_fin'],
+        ]);
+        return (int) Database::get()->lastInsertId();
+    }
 
-  // Nombre total de gardes terminées (pour l'admin)
-  public static function nombreTerminees(): int {
-    return (int) Database::get()
-      ->query("SELECT COUNT(*) FROM annonces WHERE statut = 'terminee'")
-      ->fetchColumn();
-  }
+    public static function modifier(int $id, array $d): void
+    {
+        $stmt = Database::get()->prepare(
+            "UPDATE annonces
+             SET titre = :titre, animal = :animal, description = :description,
+                 ville = :ville, date_debut = :debut, date_fin = :fin
+             WHERE id = :id"
+        );
+        $stmt->execute([
+            'titre'       => $d['titre'],
+            'animal'      => $d['animal'],
+            'description' => $d['description'],
+            'ville'       => $d['ville'],
+            'debut'       => $d['date_debut'],
+            'fin'         => $d['date_fin'],
+            'id'          => $id,
+        ]);
+    }
+
+    public static function supprimer(int $id): void
+    {
+        $stmt = Database::get()->prepare("DELETE FROM annonces WHERE id = :id");
+        $stmt->execute(['id' => $id]);
+    }
+
+    // ---------- CYCLE DE VIE : ouverte -> pourvue -> terminee ----------
+
+    // Accepter une candidature modifie TROIS choses qui doivent réussir ENSEMBLE ou pas du tout :
+    // la candidature choisie, les autres candidatures en attente, et le statut de l'annonce.
+    public static function cloturer(int $idAnnonce, int $idCandidature): void
+    {
+        $pdo = Database::get();
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare("UPDATE candidatures SET statut = 'acceptee' WHERE id = :id")
+                ->execute(['id' => $idCandidature]);
+
+            $pdo->prepare(
+                "UPDATE candidatures SET statut = 'refusee'
+                 WHERE id_annonce = :annonce AND id <> :id AND statut = 'en_attente'"
+            )->execute(['annonce' => $idAnnonce, 'id' => $idCandidature]);
+
+            $pdo->prepare("UPDATE annonces SET statut = 'pourvue' WHERE id = :annonce")
+                ->execute(['annonce' => $idAnnonce]);
+
+            $pdo->commit();      // tout est enregistré d'un coup
+        } catch (Throwable $e) {
+            $pdo->rollBack();    // au moindre problème, rien n'est modifié
+            throw $e;
+        }
+    }
+
+    // pourvue -> terminee (la garde a eu lieu)
+    public static function terminer(int $id): void
+    {
+        $stmt = Database::get()->prepare(
+            "UPDATE annonces SET statut = 'terminee' WHERE id = :id AND statut = 'pourvue'"
+        );
+        $stmt->execute(['id' => $id]);
+    }
+
+    // Clôture automatique : les gardes pourvues dont la date de fin est passée
+    // (appelée à chaque chargement de page, dans index.php)
+    public static function terminerExpirees(): void
+    {
+        Database::get()->exec(
+            "UPDATE annonces SET statut = 'terminee'
+             WHERE statut = 'pourvue' AND date_fin < CURDATE()"
+        );
+    }
+
+    // ---------- RÈGLES MÉTIER ----------
+
+    public function estProprietaire(int $idUtilisateur): bool
+    {
+        return $this->id_proprietaire === $idUtilisateur;
+    }
+
+    // Une annonce n'est modifiable ou supprimable que tant qu'elle est ouverte
+    public function estModifiable(): bool
+    {
+        return $this->statut === 'ouverte';
+    }
+
+    public function estOuverte(): bool
+    {
+        return $this->statut === 'ouverte';
+    }
+
+    // Ouverte et commence dans moins de 48 h (carte rouge "Urgence")
+    public function estUrgente(): bool
+    {
+        return $this->estOuverte()
+            && $this->date_debut <= date('Y-m-d', strtotime('+2 days'));
+    }
+
+    // ---------- STATISTIQUES ----------
+
+    // Propriétaire : nombre de gardes confiées et gardien le plus sollicité
+    public static function statsProprietaire(int $idProprietaire): array
+    {
+        $pdo = Database::get();
+
+        $stmt = $pdo->prepare(
+            "SELECT COUNT(*) FROM annonces
+             WHERE id_proprietaire = :id AND statut IN ('pourvue', 'terminee')"
+        );
+        $stmt->execute(['id' => $idProprietaire]);
+        $nbGardes = (int) $stmt->fetchColumn();
+
+        $stmt = $pdo->prepare(
+            "SELECT u.id, u.nom, COUNT(*) AS nb
+             FROM candidatures c
+             JOIN annonces a ON a.id = c.id_annonce
+             JOIN utilisateurs u ON u.id = c.id_gardien
+             WHERE a.id_proprietaire = :id AND c.statut = 'acceptee'
+             GROUP BY u.id, u.nom
+             ORDER BY nb DESC
+             LIMIT 1"
+        );
+        $stmt->execute(['id' => $idProprietaire]);
+        $gardienPrefere = $stmt->fetch() ?: null;
+
+        return ['nbGardes' => $nbGardes, 'gardienPrefere' => $gardienPrefere];
+    }
+
+    // Administrateur : nombre de gardes réalisées sur la plateforme
+    public static function nombreTerminees(): int
+    {
+        return (int) Database::get()
+            ->query("SELECT COUNT(*) FROM annonces WHERE statut = 'terminee'")
+            ->fetchColumn();
+    }
 }
