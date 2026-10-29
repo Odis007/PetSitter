@@ -179,8 +179,7 @@ class AnnonceController
         $annonce = Annonce::trouver($id);
 
         if ($annonce === null) {
-            http_response_code(404);
-            exit('Annonce introuvable.');
+            Erreur::afficher(404, 'Annonce introuvable.');
         }
         return $annonce;
     }
@@ -192,8 +191,7 @@ class AnnonceController
         $annonce = $this->chargerAnnonce();
 
         if (!$annonce->estProprietaire(AuthController::utilisateurId())) {
-            http_response_code(403);
-            exit('Accès interdit : ce n\'est pas votre annonce.');
+            Erreur::afficher(403, 'Accès interdit : ce n\'est pas votre annonce.');
         }
         if ($exigerModifiable && !$annonce->estModifiable()) {
             $_SESSION['flash_erreur'] = 'Une annonce déjà pourvue ou terminée ne peut plus être modifiée.';

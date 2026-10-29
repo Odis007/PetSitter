@@ -107,8 +107,7 @@ class AuthController
     {
         self::exigerConnexion();
         if (($_SESSION['role'] ?? '') !== 'admin') {
-            http_response_code(403);
-            exit('Accès réservé aux administrateurs.');
+            Erreur::afficher(403, 'Accès réservé aux administrateurs.');
         }
     }
 

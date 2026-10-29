@@ -709,3 +709,12 @@ button.lien-discret {
 }
 button.lien-discret:hover { color: var(--corail); }
 
+/* Page d'erreur 400 / 403 / 404 / 405 */
+.page-erreur { text-align: center; padding: 40px 0; }
+.page-erreur-code {
+  font: 800 5rem var(--police-titre);
+  color: var(--corail);
+  margin: 0;
+  line-height: 1;
+}
+.page-erreur h2 { font-size: 1.4rem; margin: 16px 0 24px; }
