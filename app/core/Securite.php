@@ -24,7 +24,8 @@ class Securite
         $recu = $_POST['csrf'] ?? '';
 
         if (!is_string($recu) || !hash_equals(self::jeton(), $recu)) {
-            Erreur::afficher(403, 'Jeton de sécurité invalide. Rechargez la page et recommencez.');
+            http_response_code(403);
+            exit('Jeton de sécurité invalide. Rechargez la page et recommencez.');
         }
     }
 
@@ -32,7 +33,8 @@ class Securite
     public static function exigerPost(): void
     {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-            Erreur::afficher(405, 'Méthode non autorisée.');
+            http_response_code(405);
+            exit('Méthode non autorisée.');
         }
         self::verifier();
     }

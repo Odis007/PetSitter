@@ -11,7 +11,8 @@ class CandidatureController
 
         $annonce = Annonce::trouver((int) ($_GET['id'] ?? 0));
         if ($annonce === null) {
-            Erreur::afficher(404, 'Annonce introuvable.');
+            http_response_code(404);
+            exit('Annonce introuvable.');
         }
 
         $idGardien = AuthController::utilisateurId();
@@ -50,10 +51,12 @@ class CandidatureController
 
         $candidature = Candidature::trouver((int) ($_GET['id'] ?? 0));
         if ($candidature === null) {
-            Erreur::afficher(404, 'Candidature introuvable.');
+            http_response_code(404);
+            exit('Candidature introuvable.');
         }
         if ($candidature->id_gardien !== AuthController::utilisateurId()) {
-            Erreur::afficher(403, 'Accès interdit : ce n\'est pas votre candidature.');
+            http_response_code(403);
+            exit('Accès interdit : ce n\'est pas votre candidature.');
         }
         if ($candidature->statut !== 'en_attente') {
             $_SESSION['flash_erreur'] = 'Seule une candidature en attente peut être retirée.';
@@ -92,10 +95,12 @@ class CandidatureController
 
         $annonce = Annonce::trouver((int) ($_GET['id'] ?? 0));
         if ($annonce === null) {
-            Erreur::afficher(404, 'Annonce introuvable.');
+            http_response_code(404);
+            exit('Annonce introuvable.');
         }
         if (!$annonce->estProprietaire(AuthController::utilisateurId())) {
-            Erreur::afficher(403, 'Accès interdit : ce n\'est pas votre annonce.');
+            http_response_code(403);
+            exit('Accès interdit : ce n\'est pas votre annonce.');
         }
 
         $candidatures = Candidature::parAnnonce($annonce->id);
@@ -115,17 +120,20 @@ class CandidatureController
 
         $candidature = Candidature::trouver((int) ($_GET['id'] ?? 0));
         if ($candidature === null) {
-            Erreur::afficher(404, 'Candidature introuvable.');
+            http_response_code(404);
+            exit('Candidature introuvable.');
         }
 
         $annonce = Annonce::trouver($candidature->id_annonce);
         if (!$annonce->estProprietaire(AuthController::utilisateurId())) {
-            Erreur::afficher(403, 'Accès interdit : ce n\'est pas votre annonce.');
+            http_response_code(403);
+            exit('Accès interdit : ce n\'est pas votre annonce.');
         }
 
         $decision = $_POST['decision'] ?? '';
         if (!in_array($decision, ['acceptee', 'refusee'], true)) {
-            Erreur::afficher(400, 'Décision invalide.');
+            http_response_code(400);
+            exit('Décision invalide.');
         }
 
         if ($candidature->statut !== 'en_attente' || !$annonce->estOuverte()) {

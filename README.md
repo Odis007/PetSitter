@@ -28,7 +28,7 @@ public/index.php        Routeur unique : sécurité, session, autoload, e(), red
 public/css/style.css    Feuille de style
 config/app.php          Environnement (dev / prod)
 config/database.php     Connexion PDO unique (singleton Database::get())
-app/core/               Classes transverses : Securite (CSRF), Erreur (403/404/405), Affichage (mise en forme)
+app/core/               Classes transverses : Securite (CSRF), Affichage (mise en forme du design)
 app/models/             Modèles : SQL + règles métier (Utilisateur, Annonce, Candidature, Avis)
 app/controllers/        Contrôleurs : droits, validation, appel du modèle, choix de la vue
 app/views/              Vues : HTML uniquement, tout affichage passe par e()

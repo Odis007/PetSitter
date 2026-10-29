@@ -12,13 +12,15 @@ class AvisController
         // 1. L'annonce existe
         $annonce = Annonce::trouver((int) ($_GET['id'] ?? 0));
         if ($annonce === null) {
-            Erreur::afficher(404, 'Annonce introuvable.');
+            http_response_code(404);
+            exit('Annonce introuvable.');
         }
 
         // 2. Propriétaire ou gardien accepté : sinon 403
         $idCible = Avis::cibleDe($annonce, $idAuteur);
         if ($idCible === null) {
-            Erreur::afficher(403, 'Accès interdit : vous n\'avez pas participé à cette garde.');
+            http_response_code(403);
+            exit('Accès interdit : vous n\'avez pas participé à cette garde.');
         }
 
         // 3. La garde doit être terminée
@@ -72,7 +74,8 @@ class AvisController
     {
         $utilisateur = Utilisateur::trouver((int) ($_GET['id'] ?? 0));
         if ($utilisateur === null) {
-            Erreur::afficher(404, 'Utilisateur introuvable.');
+            http_response_code(404);
+            exit('Utilisateur introuvable.');
         }
 
         $moyenne  = Avis::noteMoyenne($utilisateur->id);
